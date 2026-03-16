@@ -48,6 +48,17 @@ Typical flow:
    - `npm ci && npm run build`
 4. Set the frontend environment variable for API base URL to your deployed backend URL.
 
+### Personal-use recommendation (GitHub)
+
+Yes — for personal use, the simplest choices are:
+
+1. **Use GitHub Codespaces** (already documented above): quick, no local install, good for occasional use.
+2. **Use GitHub + cloud deploy** for a permanent URL:
+   - Frontend: Vercel/Netlify
+   - Backend API: Render/Railway/Fly.io
+
+Note: **GitHub Pages alone is not enough** for this project because it only hosts static files and cannot run the FastAPI backend.
+
 ## Local install (optional)
 
 If npm cache ownership was previously broken, first fix it:
