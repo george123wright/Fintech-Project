@@ -1,0 +1,25 @@
+# OS
+.DS_Store
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Python / backend
+backend/.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local DB/runtime
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
+
+# Env / secrets
+.env
+backend/.env
+
+# Office temp files
+~$*.docx
