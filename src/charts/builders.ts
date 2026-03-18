@@ -2,6 +2,9 @@ import type { Data, Layout } from "plotly.js";
 
 const MUTED = "#6b6b8a";
 const ACCENT = "#7b6ef6";
+const LIGHT_SURFACE = "#ffffff";
+const LIGHT_GRID = "#dbe3f3";
+const LIGHT_TEXT = "#233047";
 
 const PALETTE = [
   "#7b6ef6",
@@ -82,23 +85,35 @@ export function buildFrontierChart(
         size: 14,
         color: ACCENT,
         symbol: "circle",
-        line: { color: "#e8e8f0", width: 2 },
+        line: { color: LIGHT_SURFACE, width: 2 },
       },
       text: ["Portfolio"],
       textposition: "top right",
-      textfont: { size: 11, color: "#e8e8f0" },
+      textfont: { size: 11, color: LIGHT_TEXT },
       name: "Portfolio",
       hovertemplate: "<b>Portfolio</b><extra></extra>",
     },
   ];
 
   const layout: Partial<Layout> = {
-    plot_bgcolor: "#0a0a0f",
-    paper_bgcolor: "#0a0a0f",
+    plot_bgcolor: LIGHT_SURFACE,
+    paper_bgcolor: LIGHT_SURFACE,
     font: { family: "DM Mono, monospace", color: MUTED, size: 10 },
     margin: { l: 40, r: 20, t: 20, b: 40 },
-    xaxis: { title: "Risk (sigma)", gridcolor: "#1e1e2e", tickformat: ".0%" },
-    yaxis: { title: "E(R)", gridcolor: "#1e1e2e", tickformat: ".0%" },
+    xaxis: {
+      title: "Risk (sigma)",
+      gridcolor: LIGHT_GRID,
+      linecolor: LIGHT_GRID,
+      zerolinecolor: LIGHT_GRID,
+      tickformat: ".0%",
+    },
+    yaxis: {
+      title: "E(R)",
+      gridcolor: LIGHT_GRID,
+      linecolor: LIGHT_GRID,
+      zerolinecolor: LIGHT_GRID,
+      tickformat: ".0%",
+    },
     showlegend: false,
     height: 260,
   };
