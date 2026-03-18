@@ -432,8 +432,10 @@ export type ValuationRecomputeResponse = {
 
 export type ExposureBucket = {
   label: string;
-  weight: number;
-  weight_pct: number;
+  direct_weight: number;
+  lookthrough_weight: number;
+  direct_weight_pct: number;
+  lookthrough_weight_pct: number;
 };
 
 export type ExposureHolding = {
@@ -441,7 +443,7 @@ export type ExposureHolding = {
   name: string | null;
   weight: number;
   weight_pct: number;
-  market_value: number;
+  market_value?: number | null;
   sector: string | null;
   currency: string | null;
   asset_type: string | null;
@@ -454,18 +456,38 @@ export type ConcentrationFlag = {
 };
 
 export type ExposureCoverage = {
-  sector_weight_covered: number;
-  sector_weight_covered_pct: number;
   holding_count: number;
+  lookthrough_positions: number;
+  constituent_positions: number;
+  covered_weight: number;
+  covered_weight_pct: number;
+};
+
+export type OverlapPair = {
+  left_symbol: string;
+  right_symbol: string;
+  overlap_weight: number;
+  overlap_pct_of_pair: number;
+  overlap_type: string;
+};
+
+export type ConcentrationSignal = {
+  signal_key: string;
+  signal_value: number;
+  severity: string;
+  summary: string;
 };
 
 export type ExposureSummary = {
-  asset_type: ExposureBucket[];
-  currency: ExposureBucket[];
-  sector: ExposureBucket[];
-  top_holdings: ExposureHolding[];
-  concentration_flags: ConcentrationFlag[];
+  methodology_version: string;
   coverage: ExposureCoverage;
+  breakdowns: Record<string, ExposureBucket[]>;
+  top_lookthrough_holdings: ExposureHolding[];
+  overlap_pairs: OverlapPair[];
+  concentration_signals: ConcentrationSignal[];
+  warnings: string[];
+  snapshot_id?: number | null;
+  as_of_date?: string | null;
 };
 
 export type EvidenceChip = {
@@ -481,9 +503,23 @@ export type NarrativeCard = {
   evidence_chips: EvidenceChip[];
 };
 
+export type Watchout = {
+  level: string;
+  title: string;
+  detail: string;
+};
+
+export type ChangeSummary = {
+  headline: string;
+  prior_top3_weight?: number | null;
+};
+
 export type PortfolioNarrative = {
   status: string;
   cards: NarrativeCard[];
+  watchouts: Watchout[];
+  change_summary?: ChangeSummary | null;
+  evidence_chips: EvidenceChip[];
   warnings: string[];
 };
 
@@ -745,4 +781,32 @@ export type ScenarioRunListItem = {
 export type ScenarioRunListResponse = {
   portfolio_id: number;
   runs: ScenarioRunListItem[];
+};
+
+
+export type ScenarioTemplate = {
+  key: string;
+  display_name: string;
+  factor_key: string;
+  shock_value: number;
+  shock_unit: string;
+  horizon_days: number;
+  confidence_level: number;
+  n_sims: number;
+  narrative: string;
+  objective: string;
+};
+
+export type MacroWorkflowStep = {
+  step_key: string;
+  title: string;
+  detail: string;
+};
+
+export type GuidedMacroWorkflowResponse = {
+  workflow_key: string;
+  title: string;
+  description: string;
+  steps: MacroWorkflowStep[];
+  templates: ScenarioTemplate[];
 };

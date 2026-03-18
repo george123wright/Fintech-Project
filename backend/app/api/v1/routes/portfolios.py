@@ -44,11 +44,8 @@ from app.schemas.portfolios import (
 from app.schemas.scenarios import ScenarioRunListItem
 from app.schemas.valuation import PortfolioValuationOverviewResponse, ValuationRunOut
 from app.services.ingestion import ingest_holdings_upload, ingest_manual_holdings
-from app.services.insights import (
-    build_portfolio_exposure_summary,
-    build_portfolio_narrative,
-    load_latest_fundamentals,
-)
+from app.services.exposures import exposure_snapshot_payload, latest_exposure_snapshot
+from app.services.narratives import narrative_payload, latest_narrative_snapshot
 from app.services.portfolio import (
     create_portfolio,
     ensure_default_portfolio,
@@ -62,7 +59,7 @@ from app.services.portfolio import (
 )
 from app.services.pricing import RANGE_TO_DAYS, get_symbols_price_frame
 from app.services.providers import fetch_portfolio_news, fetch_security_events
-from app.services.refresh import run_refresh_for_portfolio
+from app.services.refresh import RefreshBusyError, run_refresh_for_portfolio
 from app.services.valuation import (
     latest_portfolio_valuation_snapshot,
     latest_valuation_run,
@@ -216,6 +213,8 @@ def refresh_portfolio_route(portfolio_id: int, db: Session = Depends(get_db)) ->
 
     try:
         outcome = run_refresh_for_portfolio(db, portfolio_id, trigger_type="manual")
+    except RefreshBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OperationalError as exc:
         detail = str(getattr(exc, "orig", exc))
         if "database is locked" in detail.lower():
@@ -271,27 +270,27 @@ def overview_route(portfolio_id: int, db: Session = Depends(get_db)) -> Overview
 
     metric = latest_metrics_for_snapshot(db, snapshot.id)
     metric_payload = RiskMetricOut.model_validate(metric) if metric else None
-    fundamentals_by_symbol = load_latest_fundamentals(db, [position.symbol for position in positions])
-    exposure_summary_raw = build_portfolio_exposure_summary(
-        positions,
-        fundamentals_by_symbol=fundamentals_by_symbol,
-        metrics=metric,
-    )
-    exposure_summary = ExposureSummaryOut.model_validate(exposure_summary_raw)
+    exposure_summary = ExposureSummaryOut.model_validate(exposure_snapshot_payload(latest_exposure_snapshot(db, portfolio_id, snapshot.id)) or {
+        "coverage": {"holding_count": len(positions), "lookthrough_positions": 0, "constituent_positions": 0, "covered_weight": 0.0, "covered_weight_pct": 0.0},
+        "breakdowns": {},
+        "top_lookthrough_holdings": [],
+        "overlap_pairs": [],
+        "concentration_signals": [],
+        "warnings": ["exposure_snapshot_missing"],
+    })
 
     last_job = latest_refresh_job(db, portfolio_id)
     last_refresh_payload = None if last_job is None else RefreshJobOut.model_validate(last_job)
     valuation_summary = _valuation_overview_for_portfolio(db, portfolio_id)
     latest_scenario = latest_scenario_run(db, portfolio_id)
-    narrative = PortfolioNarrativeOut.model_validate(
-        build_portfolio_narrative(
-            positions=positions,
-            exposure_summary=exposure_summary_raw,
-            metrics=metric,
-            valuation_summary=valuation_summary,
-            latest_scenario=latest_scenario,
-        )
-    )
+    narrative = PortfolioNarrativeOut.model_validate(narrative_payload(latest_narrative_snapshot(db, portfolio_id, snapshot_id=snapshot.id)) or {
+        "status": "partial",
+        "cards": [],
+        "watchouts": [{"level": "medium", "title": "Narrative not ready", "detail": "Run refresh to generate the deterministic portfolio narrative."}],
+        "change_summary": {"headline": "No narrative snapshot available."},
+        "evidence_chips": [],
+        "warnings": ["narrative_snapshot_missing"],
+    })
 
     return OverviewResponse(
         portfolio=PortfolioRead.model_validate(portfolio),
@@ -324,6 +323,34 @@ def overview_route(portfolio_id: int, db: Session = Depends(get_db)) -> Overview
             else None
         ),
     )
+
+
+@router.get("/{portfolio_id}/exposures/overview", response_model=ExposureSummaryOut)
+def portfolio_exposure_overview_route(portfolio_id: int, db: Session = Depends(get_db)) -> ExposureSummaryOut:
+    portfolio = get_portfolio_or_404(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    snapshot = latest_snapshot(db, portfolio_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="No holdings snapshot found")
+    payload = exposure_snapshot_payload(latest_exposure_snapshot(db, portfolio_id, snapshot.id))
+    if payload is None:
+        raise HTTPException(status_code=404, detail="No exposure snapshot found. Run refresh first.")
+    return ExposureSummaryOut.model_validate(payload)
+
+
+@router.get("/{portfolio_id}/narrative", response_model=PortfolioNarrativeOut)
+def portfolio_narrative_route(portfolio_id: int, db: Session = Depends(get_db)) -> PortfolioNarrativeOut:
+    portfolio = get_portfolio_or_404(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    snapshot = latest_snapshot(db, portfolio_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="No holdings snapshot found")
+    payload = narrative_payload(latest_narrative_snapshot(db, portfolio_id, snapshot_id=snapshot.id))
+    if payload is None:
+        raise HTTPException(status_code=404, detail="No narrative snapshot found. Run refresh first.")
+    return PortfolioNarrativeOut.model_validate(payload)
 
 
 @router.get("/{portfolio_id}/analytics/risk", response_model=RiskAnalyticsResponse)

@@ -168,8 +168,10 @@ class PortfolioNewsResponse(BaseModel):
 
 class ExposureBucketOut(BaseModel):
     label: str
-    weight: float
-    weight_pct: float
+    direct_weight: float = 0.0
+    lookthrough_weight: float = 0.0
+    direct_weight_pct: float = 0.0
+    lookthrough_weight_pct: float = 0.0
 
 
 class ExposureHoldingOut(BaseModel):
@@ -177,7 +179,7 @@ class ExposureHoldingOut(BaseModel):
     name: str | None = None
     weight: float
     weight_pct: float
-    market_value: float
+    market_value: float | None = None
     sector: str | None = None
     currency: str | None = None
     asset_type: str | None = None
@@ -190,18 +192,38 @@ class ConcentrationFlagOut(BaseModel):
 
 
 class ExposureCoverageOut(BaseModel):
-    sector_weight_covered: float
-    sector_weight_covered_pct: float
     holding_count: int
+    lookthrough_positions: int = 0
+    constituent_positions: int = 0
+    covered_weight: float = 0.0
+    covered_weight_pct: float = 0.0
+
+
+class OverlapPairOut(BaseModel):
+    left_symbol: str
+    right_symbol: str
+    overlap_weight: float
+    overlap_pct_of_pair: float
+    overlap_type: str
+
+
+class ConcentrationSignalOut(BaseModel):
+    signal_key: str
+    signal_value: float
+    severity: str
+    summary: str
 
 
 class ExposureSummaryOut(BaseModel):
-    asset_type: list[ExposureBucketOut] = Field(default_factory=list)
-    currency: list[ExposureBucketOut] = Field(default_factory=list)
-    sector: list[ExposureBucketOut] = Field(default_factory=list)
-    top_holdings: list[ExposureHoldingOut] = Field(default_factory=list)
-    concentration_flags: list[ConcentrationFlagOut] = Field(default_factory=list)
+    methodology_version: str = "exposure_v1"
     coverage: ExposureCoverageOut
+    breakdowns: dict[str, list[ExposureBucketOut]] = Field(default_factory=dict)
+    top_lookthrough_holdings: list[ExposureHoldingOut] = Field(default_factory=list)
+    overlap_pairs: list[OverlapPairOut] = Field(default_factory=list)
+    concentration_signals: list[ConcentrationSignalOut] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    snapshot_id: int | None = None
+    as_of_date: str | None = None
 
 
 class EvidenceChipOut(BaseModel):
@@ -217,7 +239,21 @@ class NarrativeCardOut(BaseModel):
     evidence_chips: list[EvidenceChipOut] = Field(default_factory=list)
 
 
+class WatchoutOut(BaseModel):
+    level: str
+    title: str
+    detail: str
+
+
+class ChangeSummaryOut(BaseModel):
+    headline: str
+    prior_top3_weight: float | None = None
+
+
 class PortfolioNarrativeOut(BaseModel):
     status: str = "ok"
     cards: list[NarrativeCardOut] = Field(default_factory=list)
+    watchouts: list[WatchoutOut] = Field(default_factory=list)
+    change_summary: ChangeSummaryOut | None = None
+    evidence_chips: list[EvidenceChipOut] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

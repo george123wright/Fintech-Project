@@ -29,6 +29,14 @@ class Portfolio(Base):
         back_populates="portfolio",
         cascade="all, delete-orphan",
     )
+    exposure_snapshots: Mapped[list[PortfolioExposureSnapshot]] = relationship(
+        back_populates="portfolio",
+        cascade="all, delete-orphan",
+    )
+    narrative_snapshots: Mapped[list[PortfolioNarrativeSnapshot]] = relationship(
+        back_populates="portfolio",
+        cascade="all, delete-orphan",
+    )
     scenario_runs: Mapped[list[ScenarioRun]] = relationship(
         back_populates="portfolio",
         cascade="all, delete-orphan",
@@ -76,6 +84,14 @@ class HoldingsSnapshot(Base):
         back_populates="snapshot",
         cascade="all, delete-orphan",
     )
+    exposure_snapshots: Mapped[list[PortfolioExposureSnapshot]] = relationship(
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+    )
+    narrative_snapshots: Mapped[list[PortfolioNarrativeSnapshot]] = relationship(
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+    )
     scenario_runs: Mapped[list[ScenarioRun]] = relationship(back_populates="snapshot", cascade="all, delete-orphan")
 
 
@@ -95,6 +111,108 @@ class HoldingsPosition(Base):
     weight: Mapped[float] = mapped_column(Float, nullable=False)
 
     snapshot: Mapped[HoldingsSnapshot] = relationship(back_populates="positions")
+
+
+class SecurityMasterSnapshot(Base):
+    __tablename__ = "security_master_snapshots"
+    __table_args__ = (UniqueConstraint("symbol", "as_of_date", name="uq_security_master_symbol_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    asset_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    market_cap_bucket: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    beta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider_metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+
+class EtfConstituentSnapshot(Base):
+    __tablename__ = "etf_constituent_snapshots"
+    __table_args__ = (UniqueConstraint("parent_symbol", "constituent_symbol", "as_of_date", name="uq_etf_constituent_parent_child_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parent_symbol: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    constituent_symbol: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    constituent_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    sector: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    market_cap_bucket: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="registry")
+
+
+class PortfolioExposureSnapshot(Base):
+    __tablename__ = "portfolio_exposure_snapshots"
+    __table_args__ = (UniqueConstraint("portfolio_id", "snapshot_id", "as_of_date", name="uq_portfolio_exposure_snapshot"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), nullable=False, index=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("holdings_snapshots.id"), nullable=False, index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    methodology_version: Mapped[str] = mapped_column(String(32), nullable=False, default="exposure_v1")
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    portfolio: Mapped[Portfolio] = relationship(back_populates="exposure_snapshots")
+    snapshot: Mapped[HoldingsSnapshot] = relationship(back_populates="exposure_snapshots")
+
+
+class PortfolioExposureBreakdown(Base):
+    __tablename__ = "portfolio_exposure_breakdowns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    exposure_snapshot_id: Mapped[int] = mapped_column(ForeignKey("portfolio_exposure_snapshots.id"), nullable=False, index=True)
+    dimension: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    bucket: Mapped[str] = mapped_column(String(128), nullable=False)
+    direct_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    lookthrough_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+class PortfolioOverlapPair(Base):
+    __tablename__ = "portfolio_overlap_pairs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    exposure_snapshot_id: Mapped[int] = mapped_column(ForeignKey("portfolio_exposure_snapshots.id"), nullable=False, index=True)
+    left_symbol: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    right_symbol: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    overlap_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    overlap_pct_of_pair: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    overlap_type: Mapped[str] = mapped_column(String(32), nullable=False, default="direct")
+
+
+class PortfolioConcentrationSignal(Base):
+    __tablename__ = "portfolio_concentration_signals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    exposure_snapshot_id: Mapped[int] = mapped_column(ForeignKey("portfolio_exposure_snapshots.id"), nullable=False, index=True)
+    signal_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    signal_value: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="info")
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class PortfolioNarrativeSnapshot(Base):
+    __tablename__ = "portfolio_narrative_snapshots"
+    __table_args__ = (UniqueConstraint("portfolio_id", "snapshot_id", "as_of_date", name="uq_portfolio_narrative_snapshot"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), nullable=False, index=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("holdings_snapshots.id"), nullable=False, index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    portfolio: Mapped[Portfolio] = relationship(back_populates="narrative_snapshots")
+    snapshot: Mapped[HoldingsSnapshot] = relationship(back_populates="narrative_snapshots")
 
 
 class SecurityPriceDaily(Base):

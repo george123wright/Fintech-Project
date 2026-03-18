@@ -24,6 +24,7 @@ from app.models import (
     ScenarioRunResult,
 )
 from app.schemas.scenarios import (
+    GuidedMacroWorkflowResponse,
     RelationshipStatsOut,
     ScenarioContributionOut,
     ScenarioDistributionBinOut,
@@ -41,6 +42,7 @@ from app.schemas.scenarios import (
 from app.services.portfolio import get_portfolio_or_404, latest_snapshot
 from app.services.pricing import get_symbols_price_frame
 from app.services.providers import fetch_fred_series
+from app.services.scenarios.templates import guided_macro_workflow_payload, scenario_templates_payload
 
 MODEL_VERSION = "scenario_v1"
 MIN_OBS = 24
@@ -762,7 +764,12 @@ def scenario_metadata(portfolio_id: int) -> ScenarioMetadataResponse:
     return ScenarioMetadataResponse(
         portfolio_id=portfolio_id,
         factors=_build_factor_metadata(),
+        templates=scenario_templates_payload(),
     )
+
+
+def guided_macro_workflow() -> GuidedMacroWorkflowResponse:
+    return GuidedMacroWorkflowResponse(**guided_macro_workflow_payload())
 
 
 def _latest_factor_snapshot(db: Session) -> MacroFactorSnapshot | None:

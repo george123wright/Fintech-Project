@@ -23,10 +23,38 @@ class ScenarioMetadataResponse(BaseModel):
     status: str = "ok"
     warnings: list[str] = Field(default_factory=list)
     factors: list[ScenarioFactorMeta] = Field(default_factory=list)
+    templates: list[ScenarioTemplateOut] = Field(default_factory=list)
     default_confidence_level: float = 0.95
     default_n_sims: int = 1000
     max_n_sims: int = 5000
     horizons: list[int] = Field(default_factory=lambda: [1, 5, 21, 63, 126, 252])
+
+
+class ScenarioTemplateOut(BaseModel):
+    key: str
+    display_name: str
+    factor_key: str
+    shock_value: float
+    shock_unit: str
+    horizon_days: int
+    confidence_level: float
+    n_sims: int
+    narrative: str
+    objective: str
+
+
+class MacroWorkflowStepOut(BaseModel):
+    step_key: str
+    title: str
+    detail: str
+
+
+class GuidedMacroWorkflowResponse(BaseModel):
+    workflow_key: str
+    title: str
+    description: str
+    steps: list[MacroWorkflowStepOut] = Field(default_factory=list)
+    templates: list[ScenarioTemplateOut] = Field(default_factory=list)
 
 
 class ScenarioPreviewRequest(BaseModel):
