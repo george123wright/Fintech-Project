@@ -14,12 +14,14 @@ from app.models import HoldingsPosition, PositionRiskContribution
 from app.schemas.analytics import (
     AnalystRevisionRowOut,
     CorporateActionRowOut,
+    ExposureSummaryOut,
     ExtendedAnalyticsResponse,
     ExtendedMetricSnapshotOut,
     InsiderTransactionRowOut,
     MarketEventOut,
     NewsArticleOut,
     PricePoint,
+    PortfolioNarrativeOut,
     PortfolioNewsResponse,
     PricesResponse,
     RefreshJobOut,
@@ -42,6 +44,11 @@ from app.schemas.portfolios import (
 from app.schemas.scenarios import ScenarioRunListItem
 from app.schemas.valuation import PortfolioValuationOverviewResponse, ValuationRunOut
 from app.services.ingestion import ingest_holdings_upload, ingest_manual_holdings
+from app.services.insights import (
+    build_portfolio_exposure_summary,
+    build_portfolio_narrative,
+    load_latest_fundamentals,
+)
 from app.services.portfolio import (
     create_portfolio,
     ensure_default_portfolio,
@@ -243,6 +250,8 @@ def overview_route(portfolio_id: int, db: Session = Depends(get_db)) -> Overview
             allocation={},
             metrics=None,
             last_refresh=None,
+            exposure_summary=None,
+            narrative=None,
             valuation_summary=None,
             latest_scenario_run=None,
         )
@@ -262,11 +271,27 @@ def overview_route(portfolio_id: int, db: Session = Depends(get_db)) -> Overview
 
     metric = latest_metrics_for_snapshot(db, snapshot.id)
     metric_payload = RiskMetricOut.model_validate(metric) if metric else None
+    fundamentals_by_symbol = load_latest_fundamentals(db, [position.symbol for position in positions])
+    exposure_summary_raw = build_portfolio_exposure_summary(
+        positions,
+        fundamentals_by_symbol=fundamentals_by_symbol,
+        metrics=metric,
+    )
+    exposure_summary = ExposureSummaryOut.model_validate(exposure_summary_raw)
 
     last_job = latest_refresh_job(db, portfolio_id)
     last_refresh_payload = None if last_job is None else RefreshJobOut.model_validate(last_job)
     valuation_summary = _valuation_overview_for_portfolio(db, portfolio_id)
     latest_scenario = latest_scenario_run(db, portfolio_id)
+    narrative = PortfolioNarrativeOut.model_validate(
+        build_portfolio_narrative(
+            positions=positions,
+            exposure_summary=exposure_summary_raw,
+            metrics=metric,
+            valuation_summary=valuation_summary,
+            latest_scenario=latest_scenario,
+        )
+    )
 
     return OverviewResponse(
         portfolio=PortfolioRead.model_validate(portfolio),
@@ -277,6 +302,8 @@ def overview_route(portfolio_id: int, db: Session = Depends(get_db)) -> Overview
         allocation=allocation,
         metrics=metric_payload,
         last_refresh=last_refresh_payload,
+        exposure_summary=exposure_summary,
+        narrative=narrative,
         valuation_summary=valuation_summary,
         latest_scenario_run=(
             ScenarioRunListItem(

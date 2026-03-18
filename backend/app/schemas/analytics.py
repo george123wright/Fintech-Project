@@ -164,3 +164,60 @@ class PortfolioNewsResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     count: int = 0
     articles: list[NewsArticleOut] = Field(default_factory=list)
+
+
+class ExposureBucketOut(BaseModel):
+    label: str
+    weight: float
+    weight_pct: float
+
+
+class ExposureHoldingOut(BaseModel):
+    symbol: str
+    name: str | None = None
+    weight: float
+    weight_pct: float
+    market_value: float
+    sector: str | None = None
+    currency: str | None = None
+    asset_type: str | None = None
+
+
+class ConcentrationFlagOut(BaseModel):
+    level: str
+    title: str
+    detail: str
+
+
+class ExposureCoverageOut(BaseModel):
+    sector_weight_covered: float
+    sector_weight_covered_pct: float
+    holding_count: int
+
+
+class ExposureSummaryOut(BaseModel):
+    asset_type: list[ExposureBucketOut] = Field(default_factory=list)
+    currency: list[ExposureBucketOut] = Field(default_factory=list)
+    sector: list[ExposureBucketOut] = Field(default_factory=list)
+    top_holdings: list[ExposureHoldingOut] = Field(default_factory=list)
+    concentration_flags: list[ConcentrationFlagOut] = Field(default_factory=list)
+    coverage: ExposureCoverageOut
+
+
+class EvidenceChipOut(BaseModel):
+    label: str
+    value: str
+
+
+class NarrativeCardOut(BaseModel):
+    id: str
+    title: str
+    tone: str
+    summary: str
+    evidence_chips: list[EvidenceChipOut] = Field(default_factory=list)
+
+
+class PortfolioNarrativeOut(BaseModel):
+    status: str = "ok"
+    cards: list[NarrativeCardOut] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

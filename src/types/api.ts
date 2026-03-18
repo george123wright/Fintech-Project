@@ -430,6 +430,63 @@ export type ValuationRecomputeResponse = {
   overview: PortfolioValuationOverview | null;
 };
 
+export type ExposureBucket = {
+  label: string;
+  weight: number;
+  weight_pct: number;
+};
+
+export type ExposureHolding = {
+  symbol: string;
+  name: string | null;
+  weight: number;
+  weight_pct: number;
+  market_value: number;
+  sector: string | null;
+  currency: string | null;
+  asset_type: string | null;
+};
+
+export type ConcentrationFlag = {
+  level: string;
+  title: string;
+  detail: string;
+};
+
+export type ExposureCoverage = {
+  sector_weight_covered: number;
+  sector_weight_covered_pct: number;
+  holding_count: number;
+};
+
+export type ExposureSummary = {
+  asset_type: ExposureBucket[];
+  currency: ExposureBucket[];
+  sector: ExposureBucket[];
+  top_holdings: ExposureHolding[];
+  concentration_flags: ConcentrationFlag[];
+  coverage: ExposureCoverage;
+};
+
+export type EvidenceChip = {
+  label: string;
+  value: string;
+};
+
+export type NarrativeCard = {
+  id: string;
+  title: string;
+  tone: string;
+  summary: string;
+  evidence_chips: EvidenceChip[];
+};
+
+export type PortfolioNarrative = {
+  status: string;
+  cards: NarrativeCard[];
+  warnings: string[];
+};
+
 export type OverviewResponse = {
   portfolio: Portfolio;
   snapshot_id: number | null;
@@ -439,6 +496,8 @@ export type OverviewResponse = {
   allocation: Record<string, number>;
   metrics: RiskMetric | null;
   last_refresh: RefreshJob | null;
+  exposure_summary: ExposureSummary | null;
+  narrative: PortfolioNarrative | null;
   valuation_summary: PortfolioValuationOverview | null;
   latest_scenario_run?: ScenarioRunListItem | null;
 };

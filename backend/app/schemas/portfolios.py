@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.analytics import RefreshJobOut, RiskMetricOut
+from app.schemas.analytics import ExposureSummaryOut, PortfolioNarrativeOut, RefreshJobOut, RiskMetricOut
 from app.schemas.scenarios import ScenarioRunListItem
 from app.schemas.valuation import PortfolioValuationOverviewResponse
 
@@ -80,5 +80,7 @@ class OverviewResponse(BaseModel):
     allocation: dict[str, float]
     metrics: RiskMetricOut | None
     last_refresh: RefreshJobOut | None
+    exposure_summary: ExposureSummaryOut | None = None
+    narrative: PortfolioNarrativeOut | None = None
     valuation_summary: PortfolioValuationOverviewResponse | None = None
     latest_scenario_run: ScenarioRunListItem | None = None
