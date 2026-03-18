@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.schemas.scenarios import (
+    GuidedMacroWorkflowResponse,
     ScenarioMetadataResponse,
+    ScenarioTemplateOut,
     ScenarioPreviewRequest,
     ScenarioResultResponse,
     ScenarioRunListResponse,
@@ -15,6 +17,7 @@ from app.services.portfolio import get_portfolio_or_404
 from app.services.scenarios import (
     FACTOR_SPECS,
     get_scenario_run_detail,
+    guided_macro_workflow,
     list_scenario_runs,
     run_scenario_preview,
     scenario_metadata,
@@ -33,6 +36,28 @@ def scenario_metadata_route(portfolio_id: int, db: Session = Depends(get_db)) ->
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
     return scenario_metadata(portfolio_id)
+
+
+@router.get(
+    "/portfolios/{portfolio_id}/scenarios/templates",
+    response_model=list[ScenarioTemplateOut],
+)
+def scenario_templates_route(portfolio_id: int, db: Session = Depends(get_db)) -> list[ScenarioTemplateOut]:
+    portfolio = get_portfolio_or_404(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return scenario_metadata(portfolio_id).templates
+
+
+@router.get(
+    "/portfolios/{portfolio_id}/scenarios/workflow",
+    response_model=GuidedMacroWorkflowResponse,
+)
+def guided_macro_workflow_route(portfolio_id: int, db: Session = Depends(get_db)) -> GuidedMacroWorkflowResponse:
+    portfolio = get_portfolio_or_404(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return guided_macro_workflow()
 
 
 @router.post(

@@ -1,49 +1,112 @@
-import { usePortfolioData } from "../state/DataProvider";
+import { useEffect, useState } from "react";
 import type { Dispatch } from "react";
+import { getGuidedMacroWorkflow } from "../api/client";
+import { usePortfolioData } from "../state/DataProvider";
 import type { NavAction } from "../state/nav";
+import type { GuidedMacroWorkflowResponse, ScenarioTemplate } from "../types/api";
 
 type Props = {
   dispatch: Dispatch<NavAction>;
 };
 
 export default function MacroPage({ dispatch }: Props) {
-  const { previewScenarioForActive } = usePortfolioData();
+  const { state, previewScenarioForActive } = usePortfolioData();
+  const [workflow, setWorkflow] = useState<GuidedMacroWorkflowResponse | null>(null);
+  const [selected, setSelected] = useState<ScenarioTemplate | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  async function loadFomcPreset() {
+  useEffect(() => {
+    async function load() {
+      if (state.activePortfolioId == null) return;
+      const payload = await getGuidedMacroWorkflow(state.activePortfolioId);
+      setWorkflow(payload);
+      setSelected(payload.templates[0] ?? null);
+    }
+    void load();
+  }, [state.activePortfolioId]);
+
+  async function loadPreset(template: ScenarioTemplate) {
+    setSelected(template);
+    setLoading(true);
     try {
       await previewScenarioForActive({
-        factor_key: "rates",
-        shock_value: 25,
-        shock_unit: "bps",
-        horizon_days: 21,
-        confidence_level: 0.95,
-        n_sims: 1000,
-        selected_symbol: null,
+        factor_key: template.factor_key,
+        shock_value: template.shock_value,
+        shock_unit: template.shock_unit,
+        horizon_days: template.horizon_days,
+        confidence_level: template.confidence_level,
+        n_sims: template.n_sims,
+        selected_symbol: state.holdings[0]?.symbol ?? null,
         include_baseline: true,
         shrinkage_lambda: 0.2,
       });
-    } catch {
-      // Ignore and still route to Scenario Lab.
+      dispatch({ type: "go_page", page: "scenarios" });
+    } finally {
+      setLoading(false);
     }
-    dispatch({ type: "go_page", page: "scenarios" });
   }
 
   return (
-    <div className="page-wrap" style={{ maxWidth: 980, margin: "0 auto" }}>
-      <div className="card" style={{ padding: 26 }}>
-        <div className="kicker">Macro Event Preset</div>
-        <h1 style={{ marginTop: 0, fontFamily: "var(--sans)", letterSpacing: "-0.03em" }}>FOMC Scenario Loader</h1>
-        <p style={{ color: "var(--muted)", lineHeight: 1.7 }}>
-          This page now loads a Scenario Lab preset instead of static text. Use it to jump directly into a rates shock
-          simulation for the portfolio.
-        </p>
-        <div className="row-between" style={{ marginTop: 14 }}>
-          <button className="btn-secondary" onClick={() => dispatch({ type: "go_page", page: "overview" })}>
-            Back
-          </button>
-          <button className="btn-primary" onClick={loadFomcPreset}>
-            Open Scenario Lab (+25 bps)
-          </button>
+    <div className="page-wrap" style={{ maxWidth: 1080, margin: "0 auto" }}>
+      <div className="card" style={{ padding: 26, marginBottom: 18 }}>
+        <div className="kicker">Guided macro workflow</div>
+        <h1 style={{ marginTop: 0, fontFamily: "var(--sans)", letterSpacing: "-0.03em" }}>{workflow?.title ?? "Macro workflow"}</h1>
+        <p style={{ color: "var(--muted)", lineHeight: 1.7 }}>{workflow?.description ?? "Loading workflow…"}</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginTop: 18 }}>
+          {(workflow?.steps ?? []).map((step, idx) => (
+            <div key={step.step_key} className="surface-soft" style={{ padding: 12 }}>
+              <div className="kicker">Step {idx + 1}</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>{step.title}</div>
+              <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.6 }}>{step.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 16 }}>
+        <div className="card">
+          <div className="kicker">Scenario templates</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {(workflow?.templates ?? []).map((template) => (
+              <button
+                key={template.key}
+                type="button"
+                className="btn-secondary"
+                onClick={() => void loadPreset(template)}
+                style={{ textAlign: "left", padding: 14, opacity: loading ? 0.7 : 1 }}
+              >
+                <div className="row-between">
+                  <strong>{template.display_name}</strong>
+                  <span className="pill">{template.objective}</span>
+                </div>
+                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>{template.narrative}</div>
+                <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
+                  {template.factor_key} · {template.shock_value} {template.shock_unit} · {template.horizon_days}d
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="kicker">Selected workflow</div>
+          {selected ? (
+            <>
+              <h3 style={{ marginTop: 6 }}>{selected.display_name}</h3>
+              <p style={{ color: "var(--muted)", lineHeight: 1.7 }}>{selected.narrative}</p>
+              <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                <div className="surface-soft" style={{ padding: 10 }}>Factor: {selected.factor_key}</div>
+                <div className="surface-soft" style={{ padding: 10 }}>Shock: {selected.shock_value} {selected.shock_unit}</div>
+                <div className="surface-soft" style={{ padding: 10 }}>Horizon: {selected.horizon_days} trading days</div>
+                <div className="surface-soft" style={{ padding: 10 }}>Simulations: {selected.n_sims.toLocaleString()}</div>
+              </div>
+              <button className="btn-primary" style={{ marginTop: 14 }} onClick={() => void loadPreset(selected)} disabled={loading}>
+                {loading ? "Loading preset…" : "Open in Scenario Lab"}
+              </button>
+            </>
+          ) : (
+            <div style={{ color: "var(--muted)" }}>No workflow available yet.</div>
+          )}
         </div>
       </div>
     </div>

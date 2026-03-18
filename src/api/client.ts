@@ -17,7 +17,9 @@ import type {
   PortfolioNewsResponse,
   UploadValidationReport,
   SecurityValuation,
+  GuidedMacroWorkflowResponse,
   ScenarioMetadataResponse,
+  ScenarioTemplate,
   ScenarioPreviewRequest,
   ScenarioResultResponse,
   ScenarioRunListResponse,
@@ -381,4 +383,13 @@ export async function getSecurityScenarioSensitivity(
   return request<Record<string, unknown>>(
     `/securities/${encodeURIComponent(symbol)}/scenario-sensitivity?${query.toString()}`
   );
+}
+
+
+export async function getScenarioTemplates(portfolioId: number): Promise<ScenarioTemplate[]> {
+  return request<ScenarioTemplate[]>(`/portfolios/${portfolioId}/scenarios/templates`);
+}
+
+export async function getGuidedMacroWorkflow(portfolioId: number): Promise<GuidedMacroWorkflowResponse> {
+  return request<GuidedMacroWorkflowResponse>(`/portfolios/${portfolioId}/scenarios/workflow`);
 }
