@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import { buildDonutChart, buildFrontierChart } from "../charts/builders";
 import DataWarningBanner from "../components/DataWarningBanner";
+import PortfolioExposureSummary from "../components/PortfolioExposureSummary";
+import PortfolioNarrativePanel from "../components/PortfolioNarrativePanel";
 import ValuationCompass from "../components/ValuationCompass";
 import type { NavAction } from "../state/nav";
 import { usePortfolioData } from "../state/DataProvider";
@@ -179,6 +181,8 @@ export default function OverviewPage({ dispatch }: Props) {
   const allocation = normalizeAllocation(dataState.overview?.allocation ?? {});
   const valuationOverview = dataState.valuationOverview ?? dataState.overview?.valuation_summary;
   const latestScenario = dataState.overview?.latest_scenario_run ?? dataState.scenarioRuns[0] ?? null;
+  const exposureSummary = dataState.overview?.exposure_summary ?? null;
+  const portfolioNarrative = dataState.overview?.narrative ?? null;
   const extendedRoot = asRecord(dataState.extendedMetrics?.metrics);
   const extendedPortfolio = asRecord(extendedRoot?.portfolio);
   const extendedReturns = asRecord(extendedPortfolio?.returns);
@@ -589,6 +593,9 @@ export default function OverviewPage({ dispatch }: Props) {
               <MetricCard label="Beta" value={(metrics?.beta ?? 0).toFixed(2)} />
             </div>
           </div>
+
+          <PortfolioNarrativePanel narrative={portfolioNarrative} />
+          <PortfolioExposureSummary summary={exposureSummary} />
 
           <div className="kicker">Efficient Frontier - Portfolio Position</div>
           <div className="surface" style={{ marginBottom: 24 }}>

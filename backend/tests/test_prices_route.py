@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from app.api.v1.routes import portfolios
+from app.db import Base, engine
 from app.db import SessionLocal
 from app.services.portfolio import ensure_default_portfolio
 
 
 def test_prices_route_returns_partial_when_provider_fails(monkeypatch) -> None:
+    Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         portfolio = ensure_default_portfolio(db)
 
@@ -22,4 +24,3 @@ def test_prices_route_returns_partial_when_provider_fails(monkeypatch) -> None:
         assert response.status == "partial"
         assert "E_PRICE_FETCH_FAILED" in response.warnings
         assert response.series == []
-
