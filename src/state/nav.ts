@@ -1,4 +1,5 @@
 export type Page =
+  | "lens"
   | "overview"
   | "watchlist"
   | "scenarios"
@@ -37,7 +38,7 @@ export type NavState = {
 };
 
 export const DEFAULT_NAV: NavState = {
-  page: "overview",
+  page: "lens",
   sym: null,
   chartSym: "NVDA",
   highlightIdx: null,

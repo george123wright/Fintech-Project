@@ -8,6 +8,7 @@ type Props = {
 };
 
 const LINKS: Array<{ label: string; page: Page }> = [
+  { label: "Lens", page: "lens" },
   { label: "Overview", page: "overview" },
   { label: "Watchlist", page: "watchlist" },
   { label: "Scenarios", page: "scenarios" },
@@ -20,7 +21,7 @@ export default function TopNav({ state, dispatch }: Props) {
 
   return (
     <nav className="top-nav">
-      <button className="nav-brand" onClick={() => dispatch({ type: "go_overview" })}>
+      <button className="nav-brand" onClick={() => dispatch({ type: "go_page", page: "lens" })}>
         <span className="nav-brand-title">lens</span>
         <span className="nav-brand-title nav-dot">.</span>
       </button>
