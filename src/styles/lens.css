@@ -72,8 +72,8 @@ input {
   justify-content: space-between;
   gap: 16px;
   padding: 16px 28px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #2f1b12;
+  background: rgba(75, 46, 31, 0.97);
   backdrop-filter: blur(12px);
 }
 
@@ -83,7 +83,7 @@ input {
   gap: 4px;
   border: 0;
   background: transparent;
-  color: var(--text);
+  color: #ffffff;
   cursor: pointer;
   transition: transform 0.2s ease;
 }
@@ -100,7 +100,7 @@ input {
 }
 
 .nav-dot {
-  color: var(--accent);
+  color: #e0c2a2;
 }
 
 .nav-links {
@@ -112,7 +112,7 @@ input {
 .nav-btn {
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -124,14 +124,14 @@ input {
 
 .nav-btn:hover,
 .nav-btn.active {
-  color: var(--accent);
-  border-color: rgba(111, 124, 255, 0.6);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.7);
 }
 
 .macro-chip {
-  border: 1px solid rgba(179, 144, 71, 0.35);
-  background: rgba(179, 144, 71, 0.14);
-  color: var(--yellow);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 11px;
@@ -143,17 +143,26 @@ input {
 
 .macro-chip:hover {
   transform: translateY(-1px);
-  background: rgba(179, 144, 71, 0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 @keyframes macro-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(179, 144, 71, 0);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(179, 144, 71, 0.14);
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.2);
   }
+}
+
+.nav-portfolio-select {
+  background: rgba(58, 35, 23, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
 }
 
 .page-wrap {
