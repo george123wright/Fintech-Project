@@ -1,6 +1,7 @@
 import { useReducer, type ReactNode } from "react";
 import TopNav from "./components/TopNav";
 import ChartPage from "./pages/ChartPage";
+import LensPage from "./pages/LensPage";
 import MacroPage from "./pages/MacroPage";
 import AnalystHistoryPage from "./pages/AnalystHistoryPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -16,6 +17,9 @@ export default function App() {
 
   let page: ReactNode;
   switch (state.page) {
+    case "lens":
+      page = <LensPage />;
+      break;
     case "overview":
       page = <OverviewPage dispatch={dispatch} />;
       break;
