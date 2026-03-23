@@ -45,20 +45,13 @@ export default function TopNav({ state, dispatch }: Props) {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <select
+          className="nav-portfolio-select"
           value={dataState.activePortfolioId ?? ""}
           onChange={(event) => {
             const id = Number(event.target.value);
             if (Number.isFinite(id) && id > 0) {
               void selectPortfolio(id);
             }
-          }}
-          style={{
-            background: "rgba(17,19,29,0.95)",
-            border: "1px solid var(--border)",
-            color: "var(--text)",
-            borderRadius: 6,
-            padding: "6px 8px",
-            fontSize: 11,
           }}
         >
           {dataState.portfolios.map((portfolio) => (
