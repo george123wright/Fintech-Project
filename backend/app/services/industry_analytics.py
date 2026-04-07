@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from time import sleep
 from typing import Literal
 
@@ -11,8 +11,16 @@ import yfinance as yf
 
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 0.35
+_SLUG_TICKER_TTL = timedelta(days=1)
+_PRICE_PANEL_TTL = timedelta(minutes=30)
 AggregationMethod = Literal["equal_weight_returns", "cap_weight_returns", "rebased_price_index"]
 IndustryMatrixSort = Literal["return", "vol", "sharpe", "alphabetical"]
+
+_slug_ticker_cache: dict[str, tuple[datetime, str | None]] = {}
+_price_panel_cache: dict[
+    tuple[tuple[str, ...], str, str, str, bool],
+    tuple[datetime, pd.DataFrame],
+] = {}
 
 
 def _normalize_tickers(tickers: list[str] | tuple[str, ...] | set[str]) -> list[str]:
@@ -21,32 +29,56 @@ def _normalize_tickers(tickers: list[str] | tuple[str, ...] | set[str]) -> list[
     return list(dict.fromkeys(normalized))
 
 
-def resolve_industry_ticker_map(industry_slugs: list[str]) -> dict[str, str]:
+def resolve_industry_ticker_map(
+    industry_slugs: list[str],
+    include_warnings: bool = False,
+) -> dict[str, str] | tuple[dict[str, str], list[str]]:
     """Resolve a mapping of representative ETF/industry ticker -> industry slug.
 
     Uses yfinance's ``Industry(...).ticker.ticker`` pathway with retries and
     defensive handling around transient network/API parsing failures.
     """
     ticker_to_slug: dict[str, str] = {}
+    warnings: list[str] = []
+    now = datetime.utcnow()
 
     for slug in list(dict.fromkeys(industry_slugs)):
         if not slug:
             continue
 
+        cached = _slug_ticker_cache.get(slug)
+        if cached and now - cached[0] <= _SLUG_TICKER_TTL:
+            cached_ticker = cached[1]
+            if cached_ticker and cached_ticker not in ticker_to_slug:
+                ticker_to_slug[cached_ticker] = slug
+            elif not cached_ticker:
+                warnings.append(f"industry_slug_resolution_failed:{slug}")
+            continue
+
         ticker: str | None = None
+        last_error: Exception | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 candidate = yf.Industry(slug).ticker.ticker
                 if isinstance(candidate, str) and candidate.strip():
                     ticker = candidate.strip().upper()
                     break
-            except Exception:
+            except Exception as exc:
+                last_error = exc
                 if attempt < _MAX_RETRIES:
                     sleep(_RETRY_DELAY_SECONDS)
 
+        _slug_ticker_cache[slug] = (now, ticker)
         if ticker and ticker not in ticker_to_slug:
             ticker_to_slug[ticker] = slug
+        elif ticker is None:
+            if last_error is not None:
+                warnings.append(f"industry_slug_resolution_failed:{slug}:{last_error.__class__.__name__}")
+            else:
+                warnings.append(f"industry_slug_resolution_failed:{slug}")
 
+    if include_warnings:
+        return ticker_to_slug, warnings
     return ticker_to_slug
 
 
@@ -81,6 +113,7 @@ def fetch_industry_price_panel(
     tickers: list[str] | tuple[str, ...] | set[str],
     start: date | datetime | str,
     end: date | datetime | str,
+    interval: str = "1d",
     auto_adjust: bool = True,
 ) -> pd.DataFrame:
     """Download close prices for industry tickers in a normalized panel format."""
@@ -88,11 +121,24 @@ def fetch_industry_price_panel(
     if not normalized_tickers:
         return pd.DataFrame(dtype=float)
 
+    cache_key = (
+        tuple(normalized_tickers),
+        str(pd.Timestamp(start).date()),
+        str(pd.Timestamp(end).date()),
+        str(interval),
+        bool(auto_adjust),
+    )
+    now = datetime.utcnow()
+    cached = _price_panel_cache.get(cache_key)
+    if cached and now - cached[0] <= _PRICE_PANEL_TTL:
+        return cached[1].copy()
+
     try:
         raw = yf.download(
             normalized_tickers,
             start=start,
             end=end,
+            interval=interval,
             auto_adjust=auto_adjust,
             progress=False,
             group_by="column",
@@ -101,7 +147,9 @@ def fetch_industry_price_panel(
     except Exception:
         return pd.DataFrame(columns=normalized_tickers, dtype=float)
 
-    return _extract_close_frame(raw, normalized_tickers)
+    panel = _extract_close_frame(raw, normalized_tickers)
+    _price_panel_cache[cache_key] = (now, panel.copy())
+    return panel
 
 
 def map_tickers_to_display_industries(
@@ -230,10 +278,31 @@ def compute_industry_return_metrics(
     risk_free_rate: float = 0.0,
     periods_per_year: int = 252,
     var_confidence: float = 0.95,
+    min_obs_by_metric: dict[str, int] | None = None,
 ) -> dict[str, dict[str, float | None]]:
     """Compute per-industry risk/return metrics using portfolio-metric conventions."""
     if returns_panel.empty:
         return {}
+    min_obs = {
+        "window_return": 1,
+        "volatility_periodic": 2,
+        "volatility_annualized": 2,
+        "skewness": 3,
+        "kurtosis": 4,
+        "var_95": 2,
+        "cvar_95": 3,
+        "sharpe": 2,
+        "sortino": 2,
+        "max_drawdown": 2,
+        "hit_rate": 1,
+        "upside_capture": 2,
+        "downside_capture": 2,
+        "beta": 2,
+        "tracking_error": 2,
+        "information_ratio": 2,
+    }
+    if min_obs_by_metric:
+        min_obs.update({k: max(1, int(v)) for k, v in min_obs_by_metric.items()})
 
     panel = returns_panel.copy()
     panel.index = pd.to_datetime(panel.index)
@@ -302,23 +371,25 @@ def compute_industry_return_metrics(
         dd = growth / running_max - 1.0
         max_dd = float(dd.min()) if len(dd) else None
 
+        obs = len(ret)
         industry_metrics: dict[str, float | None] = {
-            "window_return": float((1.0 + ret).prod() - 1.0),
-            "volatility_periodic": periodic_vol,
-            "volatility_annualized": ann_vol,
-            "skewness": float(ret.skew()) if len(ret) > 2 else None,
-            "kurtosis": float(ret.kurtosis() + 3.0) if len(ret) > 3 else None,
-            "var_95": var,
-            "cvar_95": cvar,
-            "sharpe": sharpe,
-            "sortino": sortino,
-            "max_drawdown": max_dd,
-            "hit_rate": float((ret > 0).mean()),
+            "window_return": float((1.0 + ret).prod() - 1.0) if obs >= min_obs["window_return"] else None,
+            "volatility_periodic": periodic_vol if obs >= min_obs["volatility_periodic"] else None,
+            "volatility_annualized": ann_vol if obs >= min_obs["volatility_annualized"] else None,
+            "skewness": float(ret.skew()) if obs >= min_obs["skewness"] else None,
+            "kurtosis": float(ret.kurtosis() + 3.0) if obs >= min_obs["kurtosis"] else None,
+            "var_95": var if obs >= min_obs["var_95"] else None,
+            "cvar_95": cvar if obs >= min_obs["cvar_95"] else None,
+            "sharpe": sharpe if obs >= min_obs["sharpe"] else None,
+            "sortino": sortino if obs >= min_obs["sortino"] else None,
+            "max_drawdown": max_dd if obs >= min_obs["max_drawdown"] else None,
+            "hit_rate": float((ret > 0).mean()) if obs >= min_obs["hit_rate"] else None,
         }
 
         if bench is not None:
             merged = pd.concat([ret.rename("p"), bench.rename("b")], axis=1).dropna()
-            if len(merged) >= 2:
+            merged_obs = len(merged)
+            if merged_obs >= 2:
                 bench_var = float(merged["b"].var(ddof=1))
                 beta = float(merged["p"].cov(merged["b"]) / bench_var) if bench_var > 0 else None
                 active = merged["p"] - merged["b"]
@@ -327,11 +398,15 @@ def compute_industry_return_metrics(
 
                 industry_metrics.update(
                     {
-                        "upside_capture": _capture_ratio(merged, positive=True),
-                        "downside_capture": _capture_ratio(merged, positive=False),
-                        "beta": beta,
-                        "tracking_error": te,
-                        "information_ratio": info_ratio,
+                        "upside_capture": _capture_ratio(merged, positive=True)
+                        if merged_obs >= min_obs["upside_capture"]
+                        else None,
+                        "downside_capture": _capture_ratio(merged, positive=False)
+                        if merged_obs >= min_obs["downside_capture"]
+                        else None,
+                        "beta": beta if merged_obs >= min_obs["beta"] else None,
+                        "tracking_error": te if merged_obs >= min_obs["tracking_error"] else None,
+                        "information_ratio": info_ratio if merged_obs >= min_obs["information_ratio"] else None,
                     }
                 )
             else:
