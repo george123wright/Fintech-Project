@@ -13,6 +13,8 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+The backend auto-loads `backend/.env` on startup via `python-dotenv`.
+
 ## Run
 
 ```bash
