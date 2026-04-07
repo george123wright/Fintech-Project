@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 import pandas as pd
@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import HoldingsPosition, PositionRiskContribution
 from app.schemas.analytics import (
     AnalystRevisionRowOut,
@@ -17,6 +18,14 @@ from app.schemas.analytics import (
     ExposureSummaryOut,
     ExtendedAnalyticsResponse,
     ExtendedMetricSnapshotOut,
+    IndustryAnalyticsInterval,
+    IndustryAnalyticsParams,
+    IndustryAnalyticsSortBy,
+    IndustryAnalyticsSortOrder,
+    IndustryAnalyticsWindow,
+    IndustryMatrixOut,
+    IndustryMetricRowOut,
+    IndustryOverviewResponse,
     InsiderTransactionRowOut,
     MarketEventOut,
     NewsArticleOut,
@@ -45,6 +54,12 @@ from app.schemas.scenarios import ScenarioRunListItem
 from app.schemas.valuation import PortfolioValuationOverviewResponse, ValuationRunOut
 from app.services.ingestion import ingest_holdings_upload, ingest_manual_holdings
 from app.services.exposures import exposure_snapshot_payload, latest_exposure_snapshot
+from app.services.industry_analytics import (
+    aggregate_industry_panel,
+    build_industry_return_matrices,
+    compute_industry_return_metrics,
+)
+from app.services.insights import load_latest_fundamentals
 from app.services.narratives import narrative_payload, latest_narrative_snapshot
 from app.services.portfolio import (
     create_portfolio,
@@ -69,6 +84,22 @@ from app.services.valuation import (
 from app.db import get_db
 
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
+
+
+def _industry_analytics_params(
+    window: IndustryAnalyticsWindow = Query("1Y"),
+    interval: IndustryAnalyticsInterval = Query("daily"),
+    benchmark: str | None = Query(None),
+    sort_by: IndustryAnalyticsSortBy = Query("return"),
+    sort_order: IndustryAnalyticsSortOrder = Query("desc"),
+) -> IndustryAnalyticsParams:
+    return IndustryAnalyticsParams(
+        window=window,
+        interval=interval,
+        benchmark=(benchmark.upper().strip() if benchmark else None),
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
 
 
 def _safe_json_loads(value: str | None, fallback: object) -> object:
@@ -414,6 +445,148 @@ def extended_analytics_route(portfolio_id: int, db: Session = Depends(get_db)) -
             metrics=metrics_json,
             warnings=[str(w) for w in warnings_json],
         ),
+    )
+
+
+@router.get("/{portfolio_id}/analytics/industry", response_model=IndustryOverviewResponse)
+def industry_analytics_route(
+    portfolio_id: int,
+    params: Annotated[IndustryAnalyticsParams, Depends(_industry_analytics_params)],
+    db: Session = Depends(get_db),
+) -> IndustryOverviewResponse:
+    portfolio = get_portfolio_or_404(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    snapshot = latest_snapshot(db, portfolio_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="No holdings snapshot found")
+
+    positions = list(
+        db.scalars(
+            select(HoldingsPosition)
+            .where(HoldingsPosition.snapshot_id == snapshot.id)
+            .order_by(HoldingsPosition.weight.desc())
+        )
+    )
+    if not positions:
+        raise HTTPException(status_code=404, detail="No holdings positions found")
+
+    window_days = RANGE_TO_DAYS.get(params.window, 366)
+    end_date = date.today()
+    start_date = end_date - timedelta(days=max(window_days * 2, 31))
+
+    symbol_weights = {str(p.symbol).upper(): float(p.weight) for p in positions if p.symbol}
+    symbols = list(symbol_weights.keys())
+    prices = get_symbols_price_frame(db, symbols, start_date, end_date)
+    if prices.empty:
+        raise HTTPException(status_code=404, detail="No price history found for portfolio symbols")
+
+    if params.interval == "weekly":
+        prices = prices.resample("W-FRI").last().dropna(how="all")
+    elif params.interval == "monthly":
+        prices = prices.resample("ME").last().dropna(how="all")
+
+    fundamentals = load_latest_fundamentals(db, symbols)
+    ticker_to_industry = {
+        symbol: str((getattr(fundamentals.get(symbol), "industry", None) or "Unknown industry")).strip() or "Unknown industry"
+        for symbol in symbols
+    }
+    industry_weights: dict[str, float] = {}
+    for symbol, weight in symbol_weights.items():
+        industry = ticker_to_industry.get(symbol, "Unknown industry")
+        industry_weights[industry] = industry_weights.get(industry, 0.0) + float(weight)
+
+    returns_panel, _aggregation_meta = aggregate_industry_panel(
+        prices,
+        ticker_to_industry=ticker_to_industry,
+        method="cap_weight_returns",
+        market_caps=symbol_weights,
+    )
+    if returns_panel.empty:
+        raise HTTPException(status_code=404, detail="Unable to compute industry return panel")
+
+    periods_per_year = 252 if params.interval == "daily" else (52 if params.interval == "weekly" else 12)
+
+    benchmark_symbol = (params.benchmark or portfolio.benchmark_symbol or "SPY").upper()
+    benchmark_returns = None
+    bench_frame = get_symbols_price_frame(db, [benchmark_symbol], start_date, end_date)
+    if not bench_frame.empty:
+        bench_series = bench_frame[benchmark_symbol] if benchmark_symbol in bench_frame.columns else bench_frame.iloc[:, 0]
+        if params.interval == "weekly":
+            bench_series = bench_series.resample("W-FRI").last()
+        elif params.interval == "monthly":
+            bench_series = bench_series.resample("ME").last()
+        benchmark_returns = bench_series.pct_change(fill_method=None).dropna()
+
+    metrics = compute_industry_return_metrics(
+        returns_panel=returns_panel,
+        benchmark_returns=benchmark_returns,
+        risk_free_rate=settings.risk_free_rate,
+        periods_per_year=periods_per_year,
+    )
+    matrices = build_industry_return_matrices(
+        returns_panel=returns_panel,
+        sort_by=params.sort_by,
+        risk_free_rate=settings.risk_free_rate,
+        periods_per_year=periods_per_year,
+    )
+
+    def _sort_value(item: IndustryMetricRowOut) -> float | str:
+        if params.sort_by == "alphabetical":
+            return item.industry.lower()
+        if params.sort_by == "vol":
+            return item.volatility_annualized if item.volatility_annualized is not None else float("-inf")
+        if params.sort_by == "sharpe":
+            return item.sharpe if item.sharpe is not None else float("-inf")
+        return item.window_return if item.window_return is not None else float("-inf")
+
+    rows = [
+        IndustryMetricRowOut(
+            industry=industry,
+            weight=float(industry_weights.get(industry, 0.0)),
+            window_return=payload.get("window_return"),
+            volatility_annualized=payload.get("volatility_annualized"),
+            sharpe=payload.get("sharpe"),
+            beta=payload.get("beta"),
+            tracking_error=payload.get("tracking_error"),
+            information_ratio=payload.get("information_ratio"),
+            max_drawdown=payload.get("max_drawdown"),
+            hit_rate=payload.get("hit_rate"),
+        )
+        for industry, payload in metrics.items()
+    ]
+    rows.sort(key=_sort_value, reverse=(params.sort_order == "desc" and params.sort_by != "alphabetical"))
+    if params.sort_by == "alphabetical" and params.sort_order == "desc":
+        rows.reverse()
+
+    def _maybe_reverse_matrix(matrix: dict[str, object]) -> IndustryMatrixOut:
+        labels = [str(label) for label in matrix.get("labels", [])]
+        values = matrix.get("values", [])
+        sort_context = dict(matrix.get("sort_context", {}))
+        direction = str(sort_context.get("direction", "desc"))
+        expected = "asc" if params.sort_order == "asc" else "desc"
+        if labels and direction != expected:
+            labels = list(reversed(labels))
+            values = [list(reversed(row)) for row in list(reversed(values))]
+            sort_context["direction"] = expected
+            metric_values = sort_context.get("metric_values")
+            if isinstance(metric_values, dict):
+                sort_context["metric_values"] = {label: metric_values.get(label) for label in labels}
+        return IndustryMatrixOut(labels=labels, values=values, sort_context=sort_context)
+
+    return IndustryOverviewResponse(
+        portfolio_id=portfolio_id,
+        snapshot_id=snapshot.id,
+        as_of_date=snapshot.as_of_date,
+        window=params.window,
+        interval=params.interval,
+        benchmark=benchmark_symbol,
+        sort_by=params.sort_by,
+        sort_order=params.sort_order,
+        rows=rows,
+        covariance_matrix=_maybe_reverse_matrix(matrices.get("covariance_matrix", {})),
+        correlation_matrix=_maybe_reverse_matrix(matrices.get("correlation_matrix", {})),
     )
 
 

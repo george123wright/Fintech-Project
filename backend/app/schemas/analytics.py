@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -257,3 +257,50 @@ class PortfolioNarrativeOut(BaseModel):
     change_summary: ChangeSummaryOut | None = None
     evidence_chips: list[EvidenceChipOut] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+IndustryAnalyticsWindow = Literal["1M", "3M", "6M", "1Y", "5Y"]
+IndustryAnalyticsInterval = Literal["daily", "weekly", "monthly"]
+IndustryAnalyticsSortBy = Literal["return", "vol", "sharpe", "alphabetical"]
+IndustryAnalyticsSortOrder = Literal["asc", "desc"]
+
+
+class IndustryAnalyticsParams(BaseModel):
+    window: IndustryAnalyticsWindow = "1Y"
+    interval: IndustryAnalyticsInterval = "daily"
+    benchmark: str | None = None
+    sort_by: IndustryAnalyticsSortBy = "return"
+    sort_order: IndustryAnalyticsSortOrder = "desc"
+
+
+class IndustryMetricRowOut(BaseModel):
+    industry: str
+    weight: float = 0.0
+    window_return: float | None = None
+    volatility_annualized: float | None = None
+    sharpe: float | None = None
+    beta: float | None = None
+    tracking_error: float | None = None
+    information_ratio: float | None = None
+    max_drawdown: float | None = None
+    hit_rate: float | None = None
+
+
+class IndustryMatrixOut(BaseModel):
+    labels: list[str] = Field(default_factory=list)
+    values: list[list[float | None]] = Field(default_factory=list)
+    sort_context: dict[str, Any] = Field(default_factory=dict)
+
+
+class IndustryOverviewResponse(BaseModel):
+    portfolio_id: int
+    snapshot_id: int
+    as_of_date: date
+    window: IndustryAnalyticsWindow
+    interval: IndustryAnalyticsInterval
+    benchmark: str
+    sort_by: IndustryAnalyticsSortBy
+    sort_order: IndustryAnalyticsSortOrder
+    rows: list[IndustryMetricRowOut] = Field(default_factory=list)
+    covariance_matrix: IndustryMatrixOut
+    correlation_matrix: IndustryMatrixOut
