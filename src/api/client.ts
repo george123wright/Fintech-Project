@@ -1,5 +1,7 @@
 import type {
   AnalystDetailResponse,
+  ChatQueryRequest,
+  ChatQueryResponse,
   AnalystLatestResponse,
   ExtendedAnalyticsResponse,
   HoldingsLatestResponse,
@@ -386,6 +388,19 @@ export async function recomputeSecurityValuation(
       body: JSON.stringify(assumptions ?? {}),
     }
   );
+}
+
+
+export async function postChatQuery(
+  payload: ChatQueryRequest,
+  options?: { signal?: AbortSignal }
+): Promise<ChatQueryResponse> {
+  return request<ChatQueryResponse>("/chat/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: options?.signal,
+  });
 }
 
 export async function getScenarioMetadata(
