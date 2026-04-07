@@ -2809,44 +2809,6 @@ export default function StockPage({ state, dispatch }: Props) {
                 value={formatMaybePct(valuation?.analyst_upside)}
               />
               <Row
-                label="DCF Fair Value"
-                value={valuation?.dcf_fair_value != null ? formatPrice(valuation.dcf_fair_value) : "N/A"}
-              />
-              <Row
-                label="DCF Upside"
-                value={formatMaybePct(valuation?.dcf_upside)}
-                valueColor={
-                  (valuation?.dcf_upside ?? 0) > 0
-                    ? "var(--green)"
-                    : (valuation?.dcf_upside ?? 0) < 0
-                      ? "var(--red)"
-                      : "var(--muted)"
-                }
-              />
-              <Row
-                label="RI Fair Value"
-                value={valuation?.ri_fair_value != null ? formatPrice(valuation.ri_fair_value) : "N/A"}
-              />
-              <Row
-                label="RI Upside"
-                value={formatMaybePct(valuation?.ri_upside)}
-              />
-              <Row
-                label="DDM Fair Value"
-                value={valuation?.ddm_fair_value != null ? formatPrice(valuation.ddm_fair_value) : "N/A"}
-              />
-              <Row
-                label="DDM Upside"
-                value={formatMaybePct(valuation?.ddm_upside)}
-                valueColor={
-                  (valuation?.ddm_upside ?? 0) > 0
-                    ? "var(--green)"
-                    : (valuation?.ddm_upside ?? 0) < 0
-                      ? "var(--red)"
-                      : "var(--muted)"
-                }
-              />
-              <Row
                 label="Relative Fair Value"
                 value={valuation?.relative_fair_value != null ? formatPrice(valuation.relative_fair_value) : "N/A"}
               />
