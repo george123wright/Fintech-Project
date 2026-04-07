@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from uuid import uuid4
 
@@ -32,6 +33,9 @@ from app.services.chat_observability import log_chat_error, log_chat_event
 from app.services.portfolio import get_portfolio_or_404
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+_ECHO_PATTERN = re.compile(r"\b(status|holdings?|warning|warnings)\b", re.IGNORECASE)
+_MIN_DIRECT_ANSWER_LEN = 80
+_MAX_PAGE_CONTEXT_CHARS = 280
 
 
 def _request_id(request: Request) -> str:
@@ -78,22 +82,56 @@ def _build_messages(payload: ChatQueryRequest, db: Session) -> tuple[list[dict[s
             "content": build_chat_system_prompt(portfolio_context_json=portfolio_context_json),
         }
     )
-    if payload.page_context:
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "Use this page context when relevant and cite it in plain language: "
-                    f"{payload.page_context}"
-                ),
-            }
-        )
-
     for turn in payload.conversation_history:
         messages.append({"role": turn.role, "content": turn.content})
 
-    messages.append({"role": "user", "content": payload.question})
+    question = payload.question
+    if payload.page_context:
+        compact_page_context = _compact_page_context(payload.page_context)
+        question = (
+            f"{payload.question}\n\n"
+            "Context notes (secondary, use only if relevant):\n"
+            f"{compact_page_context}"
+        )
+    messages.append({"role": "user", "content": question})
     return messages, portfolio_context
+
+
+def _compact_page_context(value: str) -> str:
+    squashed = " ".join(value.split())
+    if len(squashed) <= _MAX_PAGE_CONTEXT_CHARS:
+        return squashed
+    return f"{squashed[:_MAX_PAGE_CONTEXT_CHARS].rstrip()}…"
+
+
+def _response_missed_question_intent(answer: str) -> bool:
+    normalized = " ".join(answer.split())
+    if len(normalized) < _MIN_DIRECT_ANSWER_LEN and _ECHO_PATTERN.search(normalized):
+        return True
+    lowered = normalized.lower()
+    if normalized and not any(ch in normalized for ch in (".", "!", "?", "\n")) and _ECHO_PATTERN.search(normalized):
+        return True
+    return bool(
+        _ECHO_PATTERN.search(lowered)
+        and "question" not in lowered
+        and "because" not in lowered
+        and len(normalized.split()) <= 20
+    )
+
+
+def _with_intent_retry_instruction(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    retry_messages = list(messages)
+    retry_messages.append(
+        {
+            "role": "system",
+            "content": (
+                "Your prior response missed the user's intent. Retry now: "
+                "answer the user's exact question directly in the first paragraph, "
+                "then provide any status/holdings/warnings as secondary context notes."
+            ),
+        }
+    )
+    return retry_messages
 
 
 @router.post(
@@ -168,6 +206,8 @@ def chat_query_route(
 
     try:
         result = call_openrouter_chat(messages=messages)
+        if _response_missed_question_intent(str(result.get("content") or "")):
+            result = call_openrouter_chat(messages=_with_intent_retry_instruction(messages))
     except OpenRouterConfigError as exc:
         if analytics is not None:
             analytics.inc("chat.error")
