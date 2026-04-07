@@ -865,3 +865,44 @@ export type GuidedMacroWorkflowResponse = {
   steps: MacroWorkflowStep[];
   templates: ScenarioTemplate[];
 };
+
+
+export type ChatMessageRole = "user" | "assistant" | "system";
+
+export type ChatMessage = {
+  role: ChatMessageRole;
+  content: string;
+};
+
+export type ChatQueryRequest = {
+  portfolio_id: number;
+  question: string;
+  page_context?: string | null;
+  conversation_history?: ChatMessage[];
+};
+
+export type ChatCitation = {
+  label: string;
+  detail?: string | null;
+};
+
+export type ChatLatencyMetadata = {
+  total_ms: number;
+  provider: string;
+  model?: string | null;
+};
+
+export type ChatErrorDetail = {
+  code: string;
+  message: string;
+  warnings: string[];
+};
+
+export type ChatQueryResponse = {
+  assistant_message: string;
+  context_summary?: string | null;
+  citations: ChatCitation[];
+  latency: ChatLatencyMetadata;
+  warnings: string[];
+  error?: ChatErrorDetail | null;
+};
