@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ColorScale, Data } from "plotly.js";
 import Plot from "react-plotly.js";
 
@@ -32,6 +32,28 @@ export function reorderMatrix(matrix: Array<Array<number | null>>, orderedIndice
 export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlationMatrix }: Props) {
   const [mode, setMode] = useState<MatrixMode>("covariance");
   const [sortOption, setSortOption] = useState<SortOption>("alphabetical");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return;
+
+    if (document.fullscreenElement === containerRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await containerRef.current.requestFullscreen();
+  };
 
   const orderedRows = useMemo(() => {
     const next = [...rows];
@@ -98,14 +120,22 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
 
 
   return (
-    <div className="overview-chart-shell">
+    <div className="overview-chart-shell" ref={containerRef}>
       <div className="overview-lens-header" style={{ gap: 10, flexWrap: "wrap" }}>
         <h3 className="overview-lens-panel-title">Industry Matrix Heatmap</h3>
         <div className="market-pill-row">
           <button className={`overview-period-btn ${mode === "covariance" ? "active" : ""}`} onClick={() => setMode("covariance")}>Covariance</button>
           <button className={`overview-period-btn ${mode === "correlation" ? "active" : ""}`} onClick={() => setMode("correlation")}>Correlation</button>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button
+            className="overview-period-btn"
+            onClick={toggleFullscreen}
+            title="Toggle full screen view"
+            style={{ borderColor: "var(--accent)", color: "var(--text)" }}
+          >
+            {isFullscreen ? "Exit Full Screen" : "Full Screen"}
+          </button>
           <label style={{ fontSize: 12, color: "#7e746d" }}>Sort</label>
           <select value={sortOption} onChange={(event) => setSortOption(event.target.value as SortOption)}>
             <option value="alphabetical">Alphabetical</option>
@@ -121,13 +151,14 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
         data={[heatmapTrace]}
         layout={{
           autosize: true,
+          dragmode: isFullscreen ? "zoom" : "pan",
           margin: { l: 90, r: 20, t: 12, b: 90 },
           paper_bgcolor: "rgba(0,0,0,0)",
           plot_bgcolor: "rgba(0,0,0,0)",
           font: { family: "Inter, sans-serif", size: 11, color: "#7e746d" },
         }}
-        style={{ width: "100%", height: "320px" }}
-        config={{ displayModeBar: false, responsive: true }}
+        style={{ width: "100%", height: isFullscreen ? "100vh" : "320px" }}
+        config={{ displayModeBar: isFullscreen, responsive: true, scrollZoom: isFullscreen }}
       />
     </div>
   );
