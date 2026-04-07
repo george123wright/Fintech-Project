@@ -60,3 +60,36 @@ def test_compute_extended_metrics_returns_expected_sections() -> None:
     stocks = metrics["stocks"]
     assert "AAA" in stocks
     assert stocks["AAA"]["technicals"]["rsi_14"] is not None
+
+
+def test_compute_extended_metrics_supports_custom_window_and_interval() -> None:
+    idx = pd.date_range("2022-01-03", periods=900, freq="B")
+    prices = pd.DataFrame(
+        {
+            "AAA": np.linspace(90.0, 210.0, len(idx)),
+            "BBB": np.linspace(120.0, 180.0, len(idx)),
+        },
+        index=idx,
+    )
+    benchmark = pd.Series(np.linspace(300.0, 420.0, len(idx)), index=idx)
+    holdings = [
+        DummyHolding(symbol="AAA", weight=0.6, market_value=6000.0),
+        DummyHolding(symbol="BBB", weight=0.4, market_value=4000.0),
+    ]
+
+    result = compute_extended_metrics(
+        holdings=holdings,
+        price_frame=prices,
+        benchmark_prices=benchmark,
+        risk_free_rate=0.01,
+        benchmark_symbol="SPY",
+        db=None,
+        include_live_extras=False,
+        interval_base="weekly",
+        custom_start_date=pd.Timestamp("2023-01-01").date(),
+        custom_end_date=pd.Timestamp("2024-12-31").date(),
+    )
+
+    assert result.metrics["status"] == "ok"
+    assert result.metrics["window"] == "CUSTOM"
+    assert result.metrics["interval_base"] == "weekly"
