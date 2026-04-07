@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from time import sleep
+from typing import Literal
 
 import pandas as pd
 import yfinance as yf
@@ -9,6 +10,7 @@ import yfinance as yf
 
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 0.35
+AggregationMethod = Literal["equal_weight_returns", "cap_weight_returns", "rebased_price_index"]
 
 
 def _normalize_tickers(tickers: list[str] | tuple[str, ...] | set[str]) -> list[str]:
@@ -105,7 +107,7 @@ def map_tickers_to_display_industries(
     ticker_to_slug: dict[str, str],
     slug_to_display: dict[str, str],
 ) -> pd.DataFrame:
-    """Rename panel columns from ticker -> slug -> display, collapsing duplicates."""
+    """Rename panel columns from ticker -> slug -> display."""
     if df.empty:
         return df.copy()
 
@@ -119,10 +121,82 @@ def map_tickers_to_display_industries(
     slug_stage = {col: slug_to_display.get(str(col), str(col)) for col in working.columns}
     working = working.rename(columns=slug_stage)
 
-    if working.columns.duplicated().any():
-        working = working.T.groupby(level=0).first().T
-
     return working
+
+
+def aggregate_industry_panel(
+    prices: pd.DataFrame,
+    ticker_to_industry: dict[str, str],
+    method: AggregationMethod = "equal_weight_returns",
+    market_caps: dict[str, float] | None = None,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Aggregate same-industry tickers with an explicit methodology.
+
+    Expected input: columns are ticker symbols, rows are dates, values are prices.
+    """
+    if prices.empty:
+        return pd.DataFrame(dtype=float), {
+            "aggregation_method": method,
+            "series_type": "returns" if method != "rebased_price_index" else "index_level",
+        }
+
+    panel = prices.copy()
+    panel.index = pd.to_datetime(panel.index)
+    panel = panel.sort_index()
+    panel = panel[~panel.index.duplicated(keep="last")]
+    panel = panel.apply(pd.to_numeric, errors="coerce").ffill()
+    panel.columns = [str(col).strip().upper() for col in panel.columns]
+
+    industry_labels = [ticker_to_industry.get(col, col) for col in panel.columns]
+
+    if method == "equal_weight_returns":
+        returns = panel.pct_change(fill_method=None)
+        returns.columns = industry_labels
+        aggregated = returns.T.groupby(level=0).mean().T
+        return (
+            aggregated.dropna(axis=0, how="all").dropna(axis=1, how="all").astype(float),
+            {"aggregation_method": method, "series_type": "returns"},
+        )
+
+    if method == "cap_weight_returns":
+        returns = panel.pct_change(fill_method=None)
+        safe_caps = {str(k).strip().upper(): float(v) for k, v in (market_caps or {}).items() if float(v) > 0}
+        out: dict[str, pd.Series] = {}
+        by_industry: dict[str, list[str]] = {}
+        for ticker, industry in zip(panel.columns, industry_labels):
+            by_industry.setdefault(str(industry), []).append(str(ticker))
+        for industry, members in by_industry.items():
+            industry_returns = returns.loc[:, members]
+            cap_vec = pd.Series([safe_caps.get(sym, 0.0) for sym in members], index=members)
+            if cap_vec.sum() <= 0:
+                out[str(industry)] = industry_returns.mean(axis=1, skipna=True)
+                continue
+
+            def _weighted_row(row: pd.Series) -> float | None:
+                valid = row.notna()
+                if not valid.any():
+                    return None
+                active_caps = cap_vec[valid]
+                if active_caps.sum() <= 0:
+                    return float(row[valid].mean())
+                weights = active_caps / active_caps.sum()
+                return float((row[valid] * weights).sum())
+
+            out[str(industry)] = industry_returns.apply(_weighted_row, axis=1)
+
+        aggregated = pd.DataFrame(out, index=returns.index)
+        return (
+            aggregated.dropna(axis=0, how="all").dropna(axis=1, how="all").astype(float),
+            {"aggregation_method": method, "series_type": "returns"},
+        )
+
+    rebased = panel.divide(panel.ffill().bfill().iloc[0]).mul(100.0)
+    rebased.columns = industry_labels
+    aggregated = rebased.T.groupby(level=0).mean().T
+    return (
+        aggregated.dropna(axis=0, how="all").dropna(axis=1, how="all").astype(float),
+        {"aggregation_method": "rebased_price_index", "series_type": "index_level"},
+    )
 
 
 def clean_returns_panel(prices: pd.DataFrame) -> pd.DataFrame:

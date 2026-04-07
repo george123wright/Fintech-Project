@@ -66,8 +66,57 @@ def test_map_tickers_to_display_industries_two_step_and_safe_collapse() -> None:
         slug_to_display={"software-infrastructure": "Software - Infrastructure"},
     )
 
-    assert list(mapped.columns) == ["Software - Infrastructure"]
+    assert list(mapped.columns) == ["Software - Infrastructure", "Software - Infrastructure"]
     assert mapped.iloc[0, 0] == 0.01
+    assert mapped.iloc[0, 1] == 0.03
+
+
+def test_aggregate_industry_panel_equal_weight_default() -> None:
+    prices = pd.DataFrame(
+        {
+            "IGV": [100.0, 110.0, 121.0],
+            "SOXX": [50.0, 55.0, 60.5],
+        },
+        index=pd.date_range("2026-01-01", periods=3),
+    )
+    aggregated, meta = ia.aggregate_industry_panel(
+        prices,
+        ticker_to_industry={"IGV": "Software - Infrastructure", "SOXX": "Software - Infrastructure"},
+    )
+
+    assert list(aggregated.columns) == ["Software - Infrastructure"]
+    assert round(float(aggregated.iloc[0, 0]), 6) == 0.1
+    assert meta["aggregation_method"] == "equal_weight_returns"
+    assert meta["series_type"] == "returns"
+
+
+def test_aggregate_industry_panel_cap_weight_and_rebased() -> None:
+    prices = pd.DataFrame(
+        {
+            "AAA": [100.0, 110.0, 121.0],  # +10%, +10%
+            "BBB": [100.0, 120.0, 132.0],  # +20%, +10%
+        },
+        index=pd.date_range("2026-01-01", periods=3),
+    )
+    cap_weighted, cap_meta = ia.aggregate_industry_panel(
+        prices,
+        ticker_to_industry={"AAA": "Industry A", "BBB": "Industry A"},
+        method="cap_weight_returns",
+        market_caps={"AAA": 100.0, "BBB": 300.0},
+    )
+    rebased, rebased_meta = ia.aggregate_industry_panel(
+        prices,
+        ticker_to_industry={"AAA": "Industry A", "BBB": "Industry A"},
+        method="rebased_price_index",
+    )
+
+    assert round(float(cap_weighted.iloc[0, 0]), 6) == 0.175
+    assert cap_meta["aggregation_method"] == "cap_weight_returns"
+    assert cap_meta["series_type"] == "returns"
+    assert round(float(rebased.iloc[0, 0]), 6) == 100.0
+    assert round(float(rebased.iloc[-1, 0]), 6) == 126.5
+    assert rebased_meta["aggregation_method"] == "rebased_price_index"
+    assert rebased_meta["series_type"] == "index_level"
 
 
 def test_clean_returns_panel_generalized() -> None:
