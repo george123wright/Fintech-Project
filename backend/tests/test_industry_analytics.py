@@ -35,6 +35,29 @@ def test_resolve_industry_ticker_map_retries_and_normalizes(monkeypatch) -> None
     assert mapped == {"IGV": "software-infrastructure", "XLE": "oil-gas-integrated"}
 
 
+def test_resolve_industry_ticker_map_returns_warnings_and_uses_cache(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def fake_industry(slug: str):
+        calls["count"] += 1
+        if slug == "bad-slug":
+            raise RuntimeError("boom")
+        return _IndustryRef("xlf")
+
+    monkeypatch.setattr(ia.yf, "Industry", fake_industry)
+    ia._slug_ticker_cache.clear()
+
+    mapped_1, warnings_1 = ia.resolve_industry_ticker_map(["bad-slug", "financial-services"], include_warnings=True)
+    mapped_2, warnings_2 = ia.resolve_industry_ticker_map(["bad-slug", "financial-services"], include_warnings=True)
+
+    assert mapped_1 == {"XLF": "financial-services"}
+    assert mapped_2 == {"XLF": "financial-services"}
+    assert any(msg.startswith("industry_slug_resolution_failed:bad-slug") for msg in warnings_1)
+    assert any(msg.startswith("industry_slug_resolution_failed:bad-slug") for msg in warnings_2)
+    # bad-slug: 3 retries once, financial-services once; second call should be cache hits only.
+    assert calls["count"] == 4
+
+
 def test_fetch_industry_price_panel_normalizes_close_columns(monkeypatch) -> None:
     idx = pd.date_range("2026-01-01", periods=3)
     raw = pd.DataFrame(
@@ -55,6 +78,25 @@ def test_fetch_industry_price_panel_normalizes_close_columns(monkeypatch) -> Non
 
     assert list(panel.columns) == ["IGV", "XLE"]
     assert panel.shape == (3, 2)
+
+
+def test_fetch_industry_price_panel_uses_batch_cache(monkeypatch) -> None:
+    idx = pd.date_range("2026-01-01", periods=2)
+    raw = pd.DataFrame({("Close", "IGV"): [100.0, 101.0]}, index=idx)
+    calls = {"count": 0}
+
+    def fake_download(*args, **kwargs):
+        calls["count"] += 1
+        return raw
+
+    monkeypatch.setattr(ia.yf, "download", fake_download)
+    ia._price_panel_cache.clear()
+
+    first = ia.fetch_industry_price_panel(["igv"], start="2026-01-01", end="2026-01-10", interval="1d")
+    second = ia.fetch_industry_price_panel(["IGV"], start="2026-01-01", end="2026-01-10", interval="1d")
+
+    assert first.equals(second)
+    assert calls["count"] == 1
 
 
 def test_map_tickers_to_display_industries_two_step_and_safe_collapse() -> None:
@@ -184,6 +226,21 @@ def test_compute_industry_return_metrics_without_benchmark() -> None:
     assert utilities["beta"] is None
     assert utilities["tracking_error"] is None
     assert utilities["information_ratio"] is None
+
+
+def test_compute_industry_return_metrics_applies_min_observation_thresholds() -> None:
+    idx = pd.date_range("2026-01-01", periods=2, freq="D")
+    industry_returns = pd.DataFrame({"Utilities": [0.01, -0.005]}, index=idx)
+
+    out = ia.compute_industry_return_metrics(
+        industry_returns,
+        min_obs_by_metric={"window_return": 3, "volatility_periodic": 3, "hit_rate": 3},
+    )
+
+    utilities = out["Utilities"]
+    assert utilities["window_return"] is None
+    assert utilities["volatility_periodic"] is None
+    assert utilities["hit_rate"] is None
 
 
 def test_build_industry_return_matrices_sorted_by_return() -> None:
