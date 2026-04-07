@@ -21,11 +21,11 @@ const DIVERGING_SCALE: ColorScale = [
 
 type Props = {
   rows: IndustryRow[];
-  covarianceMatrix: number[][];
-  correlationMatrix: number[][];
+  covarianceMatrix: Array<Array<number | null>>;
+  correlationMatrix: Array<Array<number | null>>;
 };
 
-export function reorderMatrix(matrix: number[][], orderedIndices: number[]) {
+export function reorderMatrix(matrix: Array<Array<number | null>>, orderedIndices: number[]) {
   return orderedIndices.map((rowIndex) => orderedIndices.map((colIndex) => matrix[rowIndex]?.[colIndex] ?? 0));
 }
 
@@ -58,7 +58,10 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
   }, [correlationMatrix, covarianceMatrix, mode, orderedIndices]);
 
   const covarianceExtrema = useMemo(() => {
-    const values = matrix.flat();
+    const values = matrix.flat().filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    if (values.length === 0) {
+      return { min: 0, max: 0, hasSignedRange: false };
+    }
     const min = Math.min(...values);
     const max = Math.max(...values);
     return { min, max, hasSignedRange: min < 0 && max > 0 };
