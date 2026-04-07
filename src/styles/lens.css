@@ -73,8 +73,8 @@ input {
   justify-content: space-between;
   gap: 16px;
   padding: 16px 28px;
-  border-bottom: 1px solid #2f1b12;
-  background: rgba(75, 46, 31, 0.97);
+  border-bottom: 1px solid #1b2f4d;
+  background: rgba(18, 33, 58, 0.97);
   backdrop-filter: blur(12px);
 }
 
@@ -158,7 +158,7 @@ input {
 }
 
 .nav-portfolio-select {
-  background: rgba(58, 35, 23, 0.95);
+  background: rgba(24, 44, 76, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.38);
   color: #ffffff;
   border-radius: 6px;
