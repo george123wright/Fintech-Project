@@ -27,6 +27,8 @@ from app.schemas.analytics import (
     IndustryMatrixOut,
     IndustryMetricRowOut,
     IndustryOverviewResponse,
+    MacroForecastResponse,
+    MacroForecastTableOut,
     InsiderTransactionRowOut,
     MarketEventOut,
     NewsArticleOut,
@@ -80,6 +82,7 @@ from app.services.portfolio import (
 from app.services.pricing import RANGE_TO_DAYS, get_symbols_price_frame
 from app.services.providers import fetch_portfolio_news, fetch_security_events
 from app.services.refresh import RefreshBusyError, run_refresh_for_portfolio
+from app.services.trading_economics import load_forecasts
 from app.services.valuation import (
     latest_portfolio_valuation_snapshot,
     latest_valuation_run,
@@ -671,6 +674,28 @@ def industry_analytics_route(
         covariance_matrix=_maybe_reverse_matrix(matrices.get("covariance_matrix", {})),
         correlation_matrix=_maybe_reverse_matrix(matrices.get("correlation_matrix", {})),
     )
+
+
+@router.get("/{portfolio_id}/analytics/macro-forecasts", response_model=MacroForecastResponse)
+def macro_forecasts_route(portfolio_id: int, db: Session = Depends(get_db)) -> MacroForecastResponse:
+    portfolio = get_portfolio_or_404(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    try:
+        table_map = load_forecasts()
+    except Exception as exc:
+        return MacroForecastResponse(
+            status="partial",
+            tables=[],
+            warnings=[f"Unable to load TradingEconomics forecasts: {exc}"],
+        )
+
+    tables = [
+        MacroForecastTableOut(key=key, columns=payload["columns"], rows=payload["rows"])
+        for key, payload in table_map.items()
+    ]
+    return MacroForecastResponse(tables=tables)
 
 
 @router.get("/{portfolio_id}/prices", response_model=PricesResponse)

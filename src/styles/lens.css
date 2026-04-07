@@ -1188,6 +1188,10 @@ input {
   gap: 16px;
 }
 
+.market-section-shell {
+  padding: 10px 18px;
+}
+
 .market-controls-shell {
   padding: 16px 18px;
 }

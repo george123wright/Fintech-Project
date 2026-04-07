@@ -333,3 +333,16 @@ class IndustryOverviewResponse(BaseModel):
     rows: list[IndustryMetricRowOut] = Field(default_factory=list)
     covariance_matrix: IndustryMatrixOut
     correlation_matrix: IndustryMatrixOut
+
+
+class MacroForecastTableOut(BaseModel):
+    key: str
+    columns: list[str] = Field(default_factory=list)
+    rows: list[dict[str, str]] = Field(default_factory=list)
+
+
+class MacroForecastResponse(BaseModel):
+    status: str = "ok"
+    source: str = "TradingEconomics"
+    tables: list[MacroForecastTableOut] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
