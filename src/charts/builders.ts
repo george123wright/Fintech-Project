@@ -23,6 +23,17 @@ export type FrontierHolding = {
   color?: string;
 };
 
+export type FrontierPoint = {
+  risk: number;
+  expectedReturn: number;
+};
+
+export type FrontierAnalytics = {
+  frontier: FrontierPoint[];
+  holdings: Record<string, FrontierPoint>;
+  portfolio?: FrontierPoint;
+};
+
 export type ChartMarkerEvent = {
   id: string;
   date: string;
@@ -36,17 +47,22 @@ export type ChartMarkerEvent = {
 export function buildFrontierChart(
   holdings: FrontierHolding[],
   portfolioRisk?: number,
-  portfolioReturn?: number
+  portfolioReturn?: number,
+  analytics?: FrontierAnalytics
 ): { data: Data[]; layout: Partial<Layout> } {
-  const sigmas = Array.from({ length: 180 }, (_, i) => 0.07 + (0.35 * i) / 179);
-  const frontierReturns = sigmas.map((sigma) => {
+  const fallbackSigmas = Array.from({ length: 180 }, (_, i) => 0.07 + (0.35 * i) / 179);
+  const fallbackReturns = fallbackSigmas.map((sigma) => {
     const z = Math.max(0, Math.min(1, (sigma - 0.07) / 0.35));
     return 0.055 + 0.165 * Math.sqrt(z) + 0.075 * z;
   });
 
+  const frontierSigmas = analytics?.frontier.map((point) => point.risk) ?? fallbackSigmas;
+  const frontierReturns = analytics?.frontier.map((point) => point.expectedReturn) ?? fallbackReturns;
+
   const points = holdings.slice(0, 12).map((holding, idx) => {
-    const risk = 0.1 + idx * 0.035;
-    const expectedReturn = 0.04 + (holding.weight / 100) * 0.45;
+    const fromHistory = analytics?.holdings[holding.sym];
+    const risk = fromHistory?.risk ?? 0.1 + idx * 0.035;
+    const expectedReturn = fromHistory?.expectedReturn ?? 0.04 + (holding.weight / 100) * 0.45;
     const color = holding.color ?? PALETTE[idx % PALETTE.length];
 
     return {
@@ -67,7 +83,7 @@ export function buildFrontierChart(
 
   const data: Data[] = [
     {
-      x: sigmas,
+      x: frontierSigmas,
       y: frontierReturns,
       type: "scatter",
       mode: "lines",
@@ -94,6 +110,14 @@ export function buildFrontierChart(
       hovertemplate: "<b>Portfolio</b><extra></extra>",
     },
   ];
+
+  if (analytics?.portfolio != null) {
+    data[data.length - 1] = {
+      ...data[data.length - 1],
+      x: [analytics.portfolio.risk],
+      y: [analytics.portfolio.expectedReturn],
+    } as Data;
+  }
 
   const layout: Partial<Layout> = {
     plot_bgcolor: LIGHT_SURFACE,
