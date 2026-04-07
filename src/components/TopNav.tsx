@@ -23,8 +23,16 @@ export default function TopNav({ state, dispatch }: Props) {
   return (
     <nav className="top-nav">
       <button className="nav-brand" onClick={() => dispatch({ type: "go_page", page: "lens" })}>
-        <span className="nav-brand-title">lens</span>
-        <span className="nav-brand-title nav-dot">.</span>
+        <span className="nav-brand-mark" aria-hidden="true">
+          <span className="nav-brand-ring nav-brand-ring-outer" />
+          <span className="nav-brand-ring nav-brand-ring-mid" />
+          <span className="nav-brand-ring nav-brand-ring-inner" />
+          <span className="nav-brand-core" />
+        </span>
+        <span className="nav-brand-copy">
+          <span className="nav-brand-title">LENS</span>
+          <span className="nav-brand-sub">Portfolio in Focus</span>
+        </span>
       </button>
 
       <div className="nav-links">
