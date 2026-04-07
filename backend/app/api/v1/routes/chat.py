@@ -21,7 +21,10 @@ from app.services.ai_chat import (
     OpenRouterResponseError,
     OpenRouterServerError,
     OpenRouterTimeoutError,
+    build_chat_system_prompt,
+    build_portfolio_context,
     call_openrouter_chat,
+    serialize_portfolio_context,
 )
 from app.services.portfolio import get_portfolio_or_404
 
@@ -41,8 +44,16 @@ async def require_chat_config(request: Request) -> None:
         )
 
 
-def _build_messages(payload: ChatQueryRequest) -> list[dict[str, str]]:
+def _build_messages(payload: ChatQueryRequest, db: Session) -> tuple[list[dict[str, str]], dict[str, object]]:
+    portfolio_context = build_portfolio_context(db, payload.portfolio_id)
+    portfolio_context_json = serialize_portfolio_context(portfolio_context)
     messages: list[dict[str, str]] = []
+    messages.append(
+        {
+            "role": "system",
+            "content": build_chat_system_prompt(portfolio_context_json=portfolio_context_json),
+        }
+    )
     if payload.page_context:
         messages.append(
             {
@@ -58,7 +69,7 @@ def _build_messages(payload: ChatQueryRequest) -> list[dict[str, str]]:
         messages.append({"role": turn.role, "content": turn.content})
 
     messages.append({"role": "user", "content": payload.question})
-    return messages
+    return messages, portfolio_context
 
 
 @router.post(
@@ -94,7 +105,7 @@ def chat_query_route(
             ).model_dump(),
         )
 
-    messages = _build_messages(payload)
+    messages, portfolio_context = _build_messages(payload, db)
     started_at = time.perf_counter()
 
     try:
@@ -142,12 +153,16 @@ def chat_query_route(
 
     return ChatQueryResponse(
         assistant_message=(result.get("content") or "").strip(),
-        context_summary=(payload.page_context[:240] if payload.page_context else None),
+        context_summary=(
+            f"portfolio_as_of={portfolio_context.get('as_of_date')}"
+            if portfolio_context.get("as_of_date")
+            else (payload.page_context[:240] if payload.page_context else None)
+        ),
         citations=citations,
         latency=ChatLatencyMetadata(
             total_ms=elapsed_ms,
             provider=str(result.get("provider") or "openrouter"),
             model=(str(result.get("model")) if result.get("model") else None),
         ),
-        warnings=warnings,
+        warnings=warnings + [str(item) for item in portfolio_context.get("warnings", []) if isinstance(item, str)],
     )
