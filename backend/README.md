@@ -11,7 +11,11 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# then edit backend/.env and set:
+# OPENROUTER_API_KEY=sk-or-v1-...
 ```
+
+The backend auto-loads `backend/.env` on startup via `python-dotenv`.
 
 ## Run
 
@@ -56,10 +60,10 @@ uvicorn app.main:app --reload --port 8000
 
 ### OpenRouter (chat)
 - `APP_ENV` or `ENV` (default: `dev`)
-- `OPENROUTER_API_KEY` (**required when `APP_ENV/ENV` is not a dev/test value**)
+- `OPENROUTER_API_KEY` (**required for chat usage in all environments**)
 - `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
 - `OPENROUTER_MODEL` (default: `openrouter/free`)
 - `OPENROUTER_TIMEOUT_SEC` (optional)
 - `OPENROUTER_MAX_TOKENS` (optional)
 
-> Validation behavior: the app still boots without `OPENROUTER_API_KEY`, but chat endpoints return a clear runtime `503` config error in non-dev environments.
+> Validation behavior: the app still boots without `OPENROUTER_API_KEY`, but chat requests fail with a clear config error until the key is configured.

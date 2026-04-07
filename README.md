@@ -106,6 +106,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# add your real OpenRouter key to backend/.env:
+# OPENROUTER_API_KEY=sk-or-v1-...
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -158,7 +160,7 @@ Backend environment variables are configured in `backend/.env` (copy from `backe
 
 ### OpenRouter (backend only)
 - `APP_ENV` / `ENV` (default: `dev`)
-- `OPENROUTER_API_KEY` (required in non-dev environments for chat endpoints)
+- `OPENROUTER_API_KEY` (required for chat endpoints in every environment)
 - `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
 - `OPENROUTER_MODEL` (default: `openrouter/free`)
 - Optional tuning: `OPENROUTER_TIMEOUT_SEC`, `OPENROUTER_MAX_TOKENS`
