@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import time
-from fastapi import APIRouter, Depends, HTTPException, Request
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -26,9 +28,31 @@ from app.services.ai_chat import (
     call_openrouter_chat,
     serialize_portfolio_context,
 )
+from app.services.chat_observability import log_chat_error, log_chat_event
 from app.services.portfolio import get_portfolio_or_404
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+def _request_id(request: Request) -> str:
+    header_id = request.headers.get("x-request-id")
+    return (header_id or str(uuid4())).strip()
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _session_id(request: Request) -> str:
+    return (
+        request.headers.get("x-session-id")
+        or request.cookies.get("session_id")
+        or request.cookies.get("sessionid")
+        or "anonymous"
+    )
 
 
 async def require_chat_config(request: Request) -> None:
@@ -86,14 +110,47 @@ def _build_messages(payload: ChatQueryRequest, db: Session) -> tuple[list[dict[s
 )
 def chat_query_route(
     payload: ChatQueryRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     _: None = Depends(require_chat_config),
 ) -> ChatQueryResponse:
+    req_id = _request_id(request)
+    response.headers["X-Request-ID"] = req_id
+
+    client_ip = _client_ip(request)
+    session_id = _session_id(request)
+    rate_limiter = getattr(request.app.state, "chat_rate_limiter", None)
+    analytics = getattr(request.app.state, "chat_analytics", None)
+
+    if rate_limiter is not None:
+        allowed, retry_after = rate_limiter.allow(ip_key=client_ip, session_key=session_id)
+        if not allowed:
+            if analytics is not None:
+                analytics.inc("chat.rate_limited")
+            log_chat_error(
+                "rate_limited",
+                request_id=req_id,
+                ip=client_ip,
+                session_id=session_id,
+                retry_after_sec=retry_after,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=ChatErrorDetail(
+                    code="chat_rate_limited",
+                    message="Chat rate limit exceeded",
+                    warnings=[f"retry_after_seconds:{retry_after or 1}"],
+                ).model_dump(),
+                headers={"Retry-After": str(retry_after or 1), "X-Request-ID": req_id},
+            )
+
     portfolio = get_portfolio_or_404(db, payload.portfolio_id)
     if portfolio is None:
         raise HTTPException(
             status_code=404,
             detail=ChatErrorDetail(code="portfolio_not_found", message="Portfolio not found").model_dump(),
+            headers={"X-Request-ID": req_id},
         )
 
     if len(payload.conversation_history) > MAX_CHAT_HISTORY_TURNS:
@@ -103,6 +160,7 @@ def chat_query_route(
                 code="conversation_too_long",
                 message=f"Conversation history exceeds {MAX_CHAT_HISTORY_TURNS} turns",
             ).model_dump(),
+            headers={"X-Request-ID": req_id},
         )
 
     messages, portfolio_context = _build_messages(payload, db)
@@ -111,29 +169,49 @@ def chat_query_route(
     try:
         result = call_openrouter_chat(messages=messages)
     except OpenRouterConfigError as exc:
+        if analytics is not None:
+            analytics.inc("chat.error")
+        log_chat_error("provider_error", request_id=req_id, error_class=exc.__class__.__name__, message=str(exc))
         raise HTTPException(
             status_code=503,
             detail=ChatErrorDetail(code="provider_not_configured", message=str(exc)).model_dump(),
+            headers={"X-Request-ID": req_id},
         ) from exc
     except OpenRouterRateLimitError as exc:
+        if analytics is not None:
+            analytics.inc("chat.error")
+        log_chat_error("provider_error", request_id=req_id, error_class=exc.__class__.__name__, message=str(exc))
         raise HTTPException(
             status_code=429,
             detail=ChatErrorDetail(code="provider_rate_limit", message=str(exc)).model_dump(),
+            headers={"X-Request-ID": req_id},
         ) from exc
     except OpenRouterTimeoutError as exc:
+        if analytics is not None:
+            analytics.inc("chat.timeout")
+        log_chat_error("provider_timeout", request_id=req_id, error_class=exc.__class__.__name__, message=str(exc))
         raise HTTPException(
             status_code=504,
             detail=ChatErrorDetail(code="provider_timeout", message=str(exc)).model_dump(),
+            headers={"X-Request-ID": req_id},
         ) from exc
     except (OpenRouterNetworkError, OpenRouterServerError) as exc:
+        if analytics is not None:
+            analytics.inc("chat.error")
+        log_chat_error("provider_error", request_id=req_id, error_class=exc.__class__.__name__, message=str(exc))
         raise HTTPException(
             status_code=502,
             detail=ChatErrorDetail(code="provider_unavailable", message=str(exc)).model_dump(),
+            headers={"X-Request-ID": req_id},
         ) from exc
     except OpenRouterResponseError as exc:
+        if analytics is not None:
+            analytics.inc("chat.error")
+        log_chat_error("provider_error", request_id=req_id, error_class=exc.__class__.__name__, message=str(exc))
         raise HTTPException(
             status_code=502,
             detail=ChatErrorDetail(code="provider_bad_response", message=str(exc)).model_dump(),
+            headers={"X-Request-ID": req_id},
         ) from exc
 
     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
@@ -150,6 +228,21 @@ def chat_query_route(
     usage = result.get("usage")
     if isinstance(usage, dict) and usage.get("total_tokens"):
         citations.append(ChatCitation(label="token_usage", detail=f"total_tokens={usage['total_tokens']}"))
+
+    if analytics is not None:
+        analytics.inc("chat.success")
+
+    log_chat_event(
+        "completed",
+        request_id=req_id,
+        ip=client_ip,
+        session_id=session_id,
+        latency_ms=elapsed_ms,
+        model=result.get("model"),
+        token_usage=usage if isinstance(usage, dict) else None,
+        finish_reason=finish_reason,
+        analytics_snapshot=analytics.snapshot() if analytics is not None else None,
+    )
 
     return ChatQueryResponse(
         assistant_message=(result.get("content") or "").strip(),

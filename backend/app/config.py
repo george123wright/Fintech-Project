@@ -33,6 +33,9 @@ class Settings:
         else None
     )
     frontend_dist_dir: str = os.getenv("FRONTEND_DIST_DIR", str(REPO_ROOT / "dist"))
+    chat_rate_limit_window_sec: int = int(os.getenv("CHAT_RATE_LIMIT_WINDOW_SEC", "60"))
+    chat_rate_limit_per_ip: int = int(os.getenv("CHAT_RATE_LIMIT_PER_IP", "30"))
+    chat_rate_limit_per_session: int = int(os.getenv("CHAT_RATE_LIMIT_PER_SESSION", "20"))
 
     @property
     def is_dev(self) -> bool:

@@ -11,6 +11,7 @@ from app.api.v1.router import api_router
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.jobs.scheduler import start_scheduler
+from app.services.chat_observability import ChatAnalytics, ChatRateLimiter
 
 scheduler = None
 
@@ -28,6 +29,12 @@ async def lifespan(app: FastAPI):
     global scheduler
     Base.metadata.create_all(bind=engine)
     app.state.chat_config_error = _chat_config_error()
+    app.state.chat_rate_limiter = ChatRateLimiter(
+        window_sec=settings.chat_rate_limit_window_sec,
+        max_requests_per_ip=settings.chat_rate_limit_per_ip,
+        max_requests_per_session=settings.chat_rate_limit_per_session,
+    )
+    app.state.chat_analytics = ChatAnalytics()
     scheduler = start_scheduler(SessionLocal, settings.nightly_refresh_cron)
     try:
         yield
