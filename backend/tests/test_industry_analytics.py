@@ -184,3 +184,47 @@ def test_compute_industry_return_metrics_without_benchmark() -> None:
     assert utilities["beta"] is None
     assert utilities["tracking_error"] is None
     assert utilities["information_ratio"] is None
+
+
+def test_build_industry_return_matrices_sorted_by_return() -> None:
+    idx = pd.date_range("2026-01-01", periods=5, freq="D")
+    returns = pd.DataFrame(
+        {
+            "Software": [0.03, 0.01, -0.005, 0.02, 0.01],
+            "Utilities": [0.005, 0.002, 0.0, 0.004, 0.001],
+            "Energy": [-0.01, 0.0, 0.005, -0.002, 0.001],
+        },
+        index=idx,
+    )
+
+    out = ia.build_industry_return_matrices(returns, sort_by="return")
+
+    labels = out["covariance_matrix"]["labels"]
+    assert labels == ["Software", "Utilities", "Energy"]
+    assert out["correlation_matrix"]["labels"] == labels
+    assert out["covariance_matrix"]["sort_context"]["sort_by"] == "return"
+    assert out["covariance_matrix"]["sort_context"]["direction"] == "desc"
+
+    cov_vals = out["covariance_matrix"]["values"]
+    corr_vals = out["correlation_matrix"]["values"]
+    assert len(cov_vals) == len(labels)
+    assert len(corr_vals) == len(labels)
+    assert all(len(row) == len(labels) for row in cov_vals)
+    assert all(len(row) == len(labels) for row in corr_vals)
+    assert cov_vals[0][1] == cov_vals[1][0]
+    assert round(float(corr_vals[0][0]), 6) == 1.0
+
+
+def test_build_industry_return_matrices_alphabetical_sort() -> None:
+    idx = pd.date_range("2026-01-01", periods=4, freq="D")
+    returns = pd.DataFrame(
+        {
+            "Utilities": [0.01, -0.01, 0.0, 0.005],
+            "Energy": [0.0, 0.002, -0.001, 0.003],
+        },
+        index=idx,
+    )
+
+    out = ia.build_industry_return_matrices(returns, sort_by="alphabetical")
+    assert out["covariance_matrix"]["labels"] == ["Energy", "Utilities"]
+    assert out["covariance_matrix"]["sort_context"]["direction"] == "asc"
