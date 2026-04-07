@@ -11,11 +11,15 @@ from app.models import SecurityPriceDaily
 
 
 RANGE_TO_DAYS: dict[str, int] = {
+    "1D": 2,
+    "1W": 8,
     "1M": 31,
     "3M": 92,
     "6M": 183,
     "1Y": 366,
+    "3Y": 366 * 3,
     "5Y": 366 * 5,
+    "10Y": 366 * 10,
 }
 
 

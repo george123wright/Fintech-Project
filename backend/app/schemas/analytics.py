@@ -259,14 +259,18 @@ class PortfolioNarrativeOut(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-IndustryAnalyticsWindow = Literal["1M", "3M", "6M", "1Y", "5Y"]
+IndustryAnalyticsWindow = Literal["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "10Y"]
 IndustryAnalyticsInterval = Literal["daily", "weekly", "monthly"]
 IndustryAnalyticsSortBy = Literal["return", "vol", "sharpe", "alphabetical"]
 IndustryAnalyticsSortOrder = Literal["asc", "desc"]
+IndustryAnalyticsDateMode = Literal["preset", "custom"]
 
 
 class IndustryAnalyticsParams(BaseModel):
     window: IndustryAnalyticsWindow = "1Y"
+    date_mode: IndustryAnalyticsDateMode = "preset"
+    start_date: date | None = None
+    end_date: date | None = None
     interval: IndustryAnalyticsInterval = "daily"
     benchmark: str | None = None
     sort_by: IndustryAnalyticsSortBy = "return"

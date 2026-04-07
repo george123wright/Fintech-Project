@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import HoldingsPosition, PositionRiskContribution
 from app.schemas.analytics import (
+    IndustryAnalyticsDateMode,
     AnalystRevisionRowOut,
     CorporateActionRowOut,
     ExposureSummaryOut,
@@ -88,6 +89,9 @@ router = APIRouter(prefix="/portfolios", tags=["portfolios"])
 
 def _industry_analytics_params(
     window: IndustryAnalyticsWindow = Query("1Y"),
+    date_mode: IndustryAnalyticsDateMode = Query("preset"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     interval: IndustryAnalyticsInterval = Query("daily"),
     benchmark: str | None = Query(None),
     sort_by: IndustryAnalyticsSortBy = Query("return"),
@@ -95,6 +99,9 @@ def _industry_analytics_params(
 ) -> IndustryAnalyticsParams:
     return IndustryAnalyticsParams(
         window=window,
+        date_mode=date_mode,
+        start_date=start_date,
+        end_date=end_date,
         interval=interval,
         benchmark=(benchmark.upper().strip() if benchmark else None),
         sort_by=sort_by,
@@ -473,8 +480,16 @@ def industry_analytics_route(
         raise HTTPException(status_code=404, detail="No holdings positions found")
 
     window_days = RANGE_TO_DAYS.get(params.window, 366)
-    end_date = date.today()
-    start_date = end_date - timedelta(days=max(window_days * 2, 31))
+    if params.date_mode == "custom":
+        if params.start_date is None or params.end_date is None:
+            raise HTTPException(status_code=400, detail="Custom mode requires start_date and end_date.")
+        if params.start_date > params.end_date:
+            raise HTTPException(status_code=400, detail="start_date must be <= end_date.")
+        start_date = params.start_date
+        end_date = params.end_date
+    else:
+        end_date = date.today()
+        start_date = end_date - timedelta(days=max(window_days * 2, 31))
 
     symbol_weights = {str(p.symbol).upper(): float(p.weight) for p in positions if p.symbol}
     symbols = list(symbol_weights.keys())

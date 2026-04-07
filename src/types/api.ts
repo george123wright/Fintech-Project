@@ -609,7 +609,8 @@ export type SecurityEventsResponse = {
   analyst_revisions: AnalystRevisionRow[];
 };
 
-export type IndustryAnalyticsWindow = "1M" | "3M" | "6M" | "1Y" | "5Y";
+export type IndustryAnalyticsWindow = "1D" | "1W" | "1M" | "3M" | "1Y" | "3Y" | "5Y" | "10Y";
+export type IndustryAnalyticsDateMode = "preset" | "custom";
 
 export type IndustryAnalyticsInterval = "daily" | "weekly" | "monthly";
 
