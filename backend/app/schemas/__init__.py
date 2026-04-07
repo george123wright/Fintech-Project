@@ -18,6 +18,16 @@ from app.schemas.analytics import (
     SecurityEventsResponse,
     SymbolPriceSeries,
 )
+from app.schemas.chat import (
+    ChatCitation,
+    ChatErrorDetail,
+    ChatErrorResponse,
+    ChatLatencyMetadata,
+    ChatMessage,
+    ChatQueryRequest,
+    ChatQueryResponse,
+)
+
 from app.schemas.portfolios import (
     HoldingPositionOut,
     HoldingsLatestResponse,
@@ -69,6 +79,13 @@ from app.schemas.scenarios import (
 )
 
 __all__ = [
+    "ChatMessage",
+    "ChatQueryRequest",
+    "ChatCitation",
+    "ChatLatencyMetadata",
+    "ChatQueryResponse",
+    "ChatErrorDetail",
+    "ChatErrorResponse",
     "PortfolioCreate",
     "PortfolioRead",
     "ManualHoldingInput",
