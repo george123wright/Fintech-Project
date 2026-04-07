@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getNextSortState, sortIndustryRows } from "../pages/MarketOverviewPage";
+import { getNextSortState, getVisibleMarketColumns, sortIndustryRows } from "../pages/MarketOverviewPage";
 import { reorderMatrix } from "../components/IndustryMatrixHeatmap";
 
 const rows = [
@@ -92,5 +92,29 @@ describe("matrix reorder correctness", () => {
       [3, 1, 2],
       [6, 4, 5],
     ]);
+  });
+});
+
+describe("column preset visibility", () => {
+  it("returns expected visible header counts for each preset", () => {
+    expect(getVisibleMarketColumns("core")).toHaveLength(6);
+    expect(getVisibleMarketColumns("risk")).toHaveLength(10);
+    expect(getVisibleMarketColumns("relative")).toHaveLength(9);
+    expect(getVisibleMarketColumns("all")).toHaveLength(13);
+  });
+
+  it("switches between presets with expected key headers", () => {
+    expect(getVisibleMarketColumns("core").map((column) => column.key)).toEqual([
+      "industry",
+      "weight",
+      "window_return",
+      "volatility_annualized",
+      "sharpe",
+      "beta",
+    ]);
+
+    expect(getVisibleMarketColumns("all").map((column) => column.key)).toContain("information_ratio");
+    expect(getVisibleMarketColumns("all").map((column) => column.key)).toContain("tracking_error");
+    expect(getVisibleMarketColumns("all").map((column) => column.key)).toContain("upside_capture");
   });
 });

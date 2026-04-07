@@ -30,9 +30,17 @@ type MetricKey =
   | "kurtosis"
   | "var_95"
   | "cvar_95"
-  | "sortino"
   | "upside_capture"
-  | "downside_capture";
+  | "tracking_error"
+  | "information_ratio";
+
+type ColumnPreset = "core" | "risk" | "relative" | "all";
+type MarketColumn = {
+  key: MetricKey;
+  label: string;
+  align?: "left" | "right";
+  formatter?: (row: IndustryMetricRow) => string;
+};
 
 function asFinite(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -50,6 +58,64 @@ function metricKeyToApiSort(metric: MetricKey): IndustryAnalyticsSortBy {
   return "return";
 }
 
+const PRESET_LABELS: Record<ColumnPreset, string> = {
+  core: "Core",
+  risk: "Risk",
+  relative: "Relative",
+  all: "All",
+};
+
+const COLUMN_PRESETS: ColumnPreset[] = ["core", "risk", "relative", "all"];
+
+const CORE_COLUMNS: MarketColumn[] = [
+  { key: "industry", label: "Industry" },
+  { key: "weight", label: "Weight", align: "right", formatter: (row) => formatPercent(row.weight * 100, 1) },
+  {
+    key: "window_return",
+    label: "Return",
+    align: "right",
+    formatter: (row) => (row.window_return == null ? "N/A" : formatPercent(row.window_return * 100, 1)),
+  },
+  {
+    key: "volatility_annualized",
+    label: "Volatility",
+    align: "right",
+    formatter: (row) => (row.volatility_annualized == null ? "N/A" : formatPercent(row.volatility_annualized * 100, 1)),
+  },
+  { key: "sharpe", label: "Sharpe", align: "right", formatter: (row) => fmtNum(row.sharpe) },
+  { key: "beta", label: "Beta", align: "right", formatter: (row) => fmtNum(row.beta) },
+];
+
+const RISK_COLUMNS: MarketColumn[] = [
+  { key: "skewness", label: "Skew", align: "right", formatter: (row) => fmtNum(row.skewness) },
+  { key: "kurtosis", label: "Kurt", align: "right", formatter: (row) => fmtNum(row.kurtosis) },
+  {
+    key: "var_95",
+    label: "VaR 95%",
+    align: "right",
+    formatter: (row) => (row.var_95 == null ? "N/A" : formatPercent(row.var_95 * 100, 1)),
+  },
+  {
+    key: "cvar_95",
+    label: "ES 95%",
+    align: "right",
+    formatter: (row) => (row.cvar_95 == null ? "N/A" : formatPercent(row.cvar_95 * 100, 1)),
+  },
+];
+
+const RELATIVE_COLUMNS: MarketColumn[] = [
+  { key: "upside_capture", label: "Capture", align: "right", formatter: (row) => fmtNum(row.upside_capture) },
+  { key: "tracking_error", label: "Tracking Err", align: "right", formatter: (row) => fmtNum(row.tracking_error) },
+  { key: "information_ratio", label: "Info Ratio", align: "right", formatter: (row) => fmtNum(row.information_ratio) },
+];
+
+export function getVisibleMarketColumns(preset: ColumnPreset): MarketColumn[] {
+  if (preset === "core") return CORE_COLUMNS;
+  if (preset === "risk") return [...CORE_COLUMNS, ...RISK_COLUMNS];
+  if (preset === "relative") return [...CORE_COLUMNS, ...RELATIVE_COLUMNS];
+  return [...CORE_COLUMNS, ...RISK_COLUMNS, ...RELATIVE_COLUMNS];
+}
+
 export default function MarketOverviewPage({ dispatch }: Props) {
   const { state: dataState } = usePortfolioData();
   const [window, setWindow] = useState<IndustryAnalyticsWindow>("1Y");
@@ -57,7 +123,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   const [benchmark, setBenchmark] = useState("SPY");
   const [sortBy, setSortBy] = useState<MetricKey>("weight");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
-  const [showAdvanced, setShowAdvanced] = useState(true);
+  const [columnPreset, setColumnPreset] = useState<ColumnPreset>("all");
   const [payload, setPayload] = useState<IndustryOverviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +201,10 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     setSortDir(nextState.sortDir);
   };
 
+  const visibleColumns = useMemo(() => getVisibleMarketColumns(columnPreset), [columnPreset]);
+  const isCoreOnly = columnPreset === "core";
+  const selectedPresetLabel = PRESET_LABELS[columnPreset];
+
   return (
     <div className="overview-prototype-wrap market-overview-wrap">
       <div className="overview-page-title">
@@ -186,9 +256,17 @@ export default function MarketOverviewPage({ dispatch }: Props) {
 
           <div className="market-control-group">
             <label>Columns</label>
-            <button className="btn-secondary" onClick={() => setShowAdvanced((prev) => !prev)}>
-              {showAdvanced ? "Hide advanced" : "Show advanced"}
-            </button>
+            <div className="market-pill-row">
+              {COLUMN_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  className={`overview-period-btn ${columnPreset === preset ? "active" : ""}`}
+                  onClick={() => setColumnPreset(preset)}
+                >
+                  {PRESET_LABELS[preset]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -198,60 +276,53 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <div className="overview-lens-header">
             <h3 className="overview-lens-panel-title">Industry Metrics</h3>
             <span className="overview-lens-badge">Total Weight {formatPercent(totalWeight * 100, 1)}</span>
+            <span className="overview-lens-badge">Columns: {selectedPresetLabel} ({visibleColumns.length})</span>
           </div>
-          <table className="table market-table">
-            <thead>
-              <tr>
-                <th><button className="market-sort-btn" onClick={() => onSort("industry")}>Industry</button></th>
-                <th className="right"><button className="market-sort-btn" onClick={() => onSort("weight")}>Weight</button></th>
-                <th className="right"><button className="market-sort-btn" onClick={() => onSort("window_return")}>Return</button></th>
-                <th className="right"><button className="market-sort-btn" onClick={() => onSort("volatility_annualized")}>Volatility</button></th>
-                <th className="right"><button className="market-sort-btn" onClick={() => onSort("sharpe")}>Sharpe</button></th>
-                <th className="right"><button className="market-sort-btn" onClick={() => onSort("beta")}>Beta</button></th>
-                {showAdvanced ? (
-                  <>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("sortino")}>Sortino</button></th>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("skewness")}>Skew</button></th>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("kurtosis")}>Kurt</button></th>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("var_95")}>VaR 95%</button></th>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("cvar_95")}>ES 95%</button></th>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("upside_capture")}>Upside Cap</button></th>
-                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("downside_capture")}>Downside Cap</button></th>
-                  </>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.industry}>
-                  <td>{row.industry}</td>
-                  <td className="right">{formatPercent(row.weight * 100, 1)}</td>
-                  <td className={`right ${(row.window_return ?? 0) >= 0 ? "positive" : "negative"}`}>
-                    {row.window_return == null ? "N/A" : formatPercent(row.window_return * 100, 1)}
-                  </td>
-                  <td className="right">{row.volatility_annualized == null ? "N/A" : formatPercent(row.volatility_annualized * 100, 1)}</td>
-                  <td className="right">{fmtNum(row.sharpe)}</td>
-                  <td className="right">{fmtNum(row.beta)}</td>
-                  {showAdvanced ? (
-                    <>
-                      <td className="right">{fmtNum(row.sortino)}</td>
-                      <td className="right">{fmtNum(row.skewness)}</td>
-                      <td className="right">{fmtNum(row.kurtosis)}</td>
-                      <td className="right">{row.var_95 == null ? "N/A" : formatPercent(row.var_95 * 100, 1)}</td>
-                      <td className="right">{row.cvar_95 == null ? "N/A" : formatPercent(row.cvar_95 * 100, 1)}</td>
-                      <td className="right">{fmtNum(row.upside_capture)}</td>
-                      <td className="right">{fmtNum(row.downside_capture)}</td>
-                    </>
-                  ) : null}
-                </tr>
-              ))}
-              {!loading && rows.length === 0 ? (
+          <div className="market-table-scroll">
+            <table className="table market-table">
+              <thead>
                 <tr>
-                  <td colSpan={showAdvanced ? 13 : 6}>No industry analytics rows available for this portfolio/window.</td>
+                  {visibleColumns.map((column) => (
+                    <th key={column.key} className={column.align === "right" ? "right" : undefined}>
+                      <button className="market-sort-btn" onClick={() => onSort(column.key)}>
+                        {column.label}
+                      </button>
+                    </th>
+                  ))}
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.industry}>
+                    {visibleColumns.map((column) => (
+                      <td
+                        key={`${row.industry}-${column.key}`}
+                        className={
+                          column.key === "window_return"
+                            ? `right ${(row.window_return ?? 0) >= 0 ? "positive" : "negative"}`
+                            : column.align === "right"
+                              ? "right"
+                              : undefined
+                        }
+                      >
+                        {column.formatter ? column.formatter(row) : row.industry}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {!loading && rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={visibleColumns.length}>No industry analytics rows available for this portfolio/window.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          {isCoreOnly ? (
+            <p className="market-core-note">
+              Core view is enabled. Switch to Risk, Relative, or All to reveal tail risk and benchmark-relative columns.
+            </p>
+          ) : null}
         </div>
 
         <div className="overview-widget-shell market-treemap-shell">
