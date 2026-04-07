@@ -18,6 +18,7 @@ import type {
   UploadValidationReport,
   SecurityValuation,
   GuidedMacroWorkflowResponse,
+  IndustryAnalyticsDateMode,
   IndustryAnalyticsInterval,
   IndustryAnalyticsSortBy,
   IndustryAnalyticsSortOrder,
@@ -126,6 +127,9 @@ export async function getIndustryOverview(
   portfolioId: number,
   options?: {
     window?: IndustryAnalyticsWindow;
+    dateMode?: IndustryAnalyticsDateMode;
+    startDate?: string;
+    endDate?: string;
     interval?: IndustryAnalyticsInterval;
     benchmark?: string;
     sortBy?: IndustryAnalyticsSortBy;
@@ -140,6 +144,9 @@ export async function getIndustryOverview(
 
 export function buildIndustryOverviewQuery(options?: {
   window?: IndustryAnalyticsWindow;
+  dateMode?: IndustryAnalyticsDateMode;
+  startDate?: string;
+  endDate?: string;
   interval?: IndustryAnalyticsInterval;
   benchmark?: string;
   sortBy?: IndustryAnalyticsSortBy;
@@ -148,6 +155,15 @@ export function buildIndustryOverviewQuery(options?: {
   const query = new URLSearchParams();
   if (options?.window) {
     query.set("window", options.window);
+  }
+  if (options?.dateMode) {
+    query.set("date_mode", options.dateMode);
+  }
+  if (options?.startDate) {
+    query.set("start_date", options.startDate);
+  }
+  if (options?.endDate) {
+    query.set("end_date", options.endDate);
   }
   if (options?.interval) {
     query.set("interval", options.interval);

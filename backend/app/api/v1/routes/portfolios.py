@@ -18,6 +18,7 @@ from app.schemas.analytics import (
     ExposureSummaryOut,
     ExtendedAnalyticsResponse,
     ExtendedMetricSnapshotOut,
+    IndustryAnalyticsDateMode,
     IndustryAnalyticsInterval,
     IndustryAnalyticsParams,
     IndustryAnalyticsSortBy,
@@ -92,13 +93,24 @@ router = APIRouter(prefix="/portfolios", tags=["portfolios"])
 
 def _industry_analytics_params(
     window: IndustryAnalyticsWindow = Query("1Y"),
+    date_mode: IndustryAnalyticsDateMode = Query("preset"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     interval: IndustryAnalyticsInterval = Query("daily"),
     benchmark: str | None = Query(None),
     sort_by: IndustryAnalyticsSortBy = Query("return"),
     sort_order: IndustryAnalyticsSortOrder = Query("desc"),
 ) -> IndustryAnalyticsParams:
+    if not isinstance(start_date, date):
+        start_date = None
+    if not isinstance(end_date, date):
+        end_date = None
+
     return IndustryAnalyticsParams(
         window=window,
+        date_mode=date_mode,
+        start_date=start_date,
+        end_date=end_date,
         interval=interval,
         benchmark=(benchmark.upper().strip() if benchmark else None),
         sort_by=sort_by,
@@ -477,9 +489,23 @@ def industry_analytics_route(
     if not positions:
         raise HTTPException(status_code=404, detail="No holdings positions found")
 
-    window_days = RANGE_TO_DAYS.get(params.window, 366)
-    end_date = date.today()
-    start_date = end_date - timedelta(days=max(window_days * 2, 31))
+    industry_window_days = {
+        "1D": 1,
+        "1W": 7,
+        "1M": 31,
+        "3M": 92,
+        "1Y": 366,
+        "3Y": 366 * 3,
+        "5Y": 366 * 5,
+        "10Y": 366 * 10,
+    }
+    if params.date_mode == "custom" and params.start_date is not None and params.end_date is not None:
+        start_date = params.start_date
+        end_date = params.end_date
+    else:
+        window_days = industry_window_days.get(params.window, 366)
+        end_date = date.today()
+        start_date = end_date - timedelta(days=max(window_days * 2, 31))
 
     symbol_weights = {str(p.symbol).upper(): float(p.weight) for p in positions if p.symbol}
     returns_panel = pd.DataFrame(dtype=float)
@@ -634,6 +660,9 @@ def industry_analytics_route(
         resolved_ticker_count=resolved_ticker_count,
         unresolved_slugs=unresolved_slugs,
         window=params.window,
+        date_mode=params.date_mode,
+        start_date=start_date,
+        end_date=end_date,
         interval=params.interval,
         benchmark=benchmark_symbol,
         sort_by=params.sort_by,
