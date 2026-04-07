@@ -1,6 +1,7 @@
 export type Page =
   | "lens"
   | "overview"
+  | "market_overview"
   | "watchlist"
   | "scenarios"
   | "reports"
