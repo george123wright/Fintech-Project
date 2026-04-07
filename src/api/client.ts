@@ -26,6 +26,7 @@ import type {
   IndustryAnalyticsSortOrder,
   IndustryAnalyticsWindow,
   IndustryOverviewResponse,
+  MacroForecastResponse,
   ScenarioMetadataResponse,
   ScenarioTemplate,
   ScenarioPreviewRequest,
@@ -142,6 +143,10 @@ export async function getIndustryOverview(
   return request<IndustryOverviewResponse>(
     `/portfolios/${portfolioId}/analytics/industry${suffix}`
   );
+}
+
+export async function getMacroForecasts(portfolioId: number): Promise<MacroForecastResponse> {
+  return request<MacroForecastResponse>(`/portfolios/${portfolioId}/analytics/macro-forecasts`);
 }
 
 export function buildIndustryOverviewQuery(options?: {

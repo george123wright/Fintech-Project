@@ -664,6 +664,19 @@ export type IndustryOverviewResponse = {
   correlation_matrix: IndustryMatrix;
 };
 
+export type MacroForecastTable = {
+  key: string;
+  columns: string[];
+  rows: Array<Record<string, string>>;
+};
+
+export type MacroForecastResponse = {
+  status: "ok" | "partial" | "no_data" | string;
+  source: string;
+  tables: MacroForecastTable[];
+  warnings: string[];
+};
+
 export type NewsArticle = {
   id: string;
   title: string;
