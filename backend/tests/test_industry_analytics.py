@@ -294,6 +294,19 @@ def test_build_industry_return_matrices_alphabetical_sort() -> None:
     assert out["covariance_matrix"]["sort_context"]["direction"] == "asc"
 
 
+def test_build_industry_return_matrices_respects_interval_basis() -> None:
+    idx = pd.date_range("2026-01-01", periods=6, freq="D")
+    returns = pd.DataFrame({"Software": [0.01, -0.01, 0.015, 0.005, -0.002, 0.004]}, index=idx)
+
+    daily = ia.build_industry_return_matrices(returns, sort_by="vol", periods_per_year=252)
+    monthly = ia.build_industry_return_matrices(returns, sort_by="vol", periods_per_year=12)
+
+    daily_metric = daily["covariance_matrix"]["sort_context"]["metric_values"]["Software"]
+    monthly_metric = monthly["covariance_matrix"]["sort_context"]["metric_values"]["Software"]
+    assert daily_metric is not None and monthly_metric is not None
+    assert daily_metric > monthly_metric
+
+
 def test_industry_analytics_route_industry_map_scope_covers_resolved_universe(monkeypatch) -> None:
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
@@ -350,3 +363,53 @@ def test_industry_analytics_route_industry_map_scope_covers_resolved_universe(mo
     assert len(out.unresolved_slugs) > 0
     assert {row.industry for row in out.rows} == {"Software - Infrastructure", "Oil & Gas Integrated"}
     assert all(row.weight == 0.0 for row in out.rows)
+
+
+def test_industry_analytics_route_custom_date_mode_uses_explicit_dates(monkeypatch) -> None:
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        portfolio = ensure_default_portfolio(db)
+        snapshot = HoldingsSnapshot(portfolio_id=portfolio.id, as_of_date=date(2026, 4, 1))
+        db.add(snapshot)
+        db.flush()
+        db.add(
+            HoldingsPosition(
+                snapshot_id=snapshot.id,
+                symbol="AAPL",
+                market_value=1000.0,
+                currency="USD",
+                weight=1.0,
+            )
+        )
+        db.commit()
+
+        captured: dict[str, date] = {}
+
+        def fake_prices(_db, _symbols, start, end):
+            captured["start"] = start
+            captured["end"] = end
+            return pd.DataFrame(
+                {"AAPL": [100.0, 101.0, 102.0], "SPY": [500.0, 501.0, 502.0]},
+                index=pd.date_range("2026-03-01", periods=3, freq="D"),
+            )
+
+        monkeypatch.setattr(portfolios, "get_symbols_price_frame", fake_prices)
+        monkeypatch.setattr(
+            portfolios,
+            "load_latest_fundamentals",
+            lambda *_args, **_kwargs: {"AAPL": type("F", (), {"industry": "Technology"})()},
+        )
+
+        portfolios.industry_analytics_route(
+            portfolio_id=portfolio.id,
+            params=IndustryAnalyticsParams(
+                date_mode="custom",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 31),
+            ),
+            scope="holdings",
+            db=db,
+        )
+
+    assert captured["start"] == date(2026, 3, 1)
+    assert captured["end"] == date(2026, 3, 31)

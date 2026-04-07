@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RiskMetricOut(BaseModel):
@@ -259,7 +259,8 @@ class PortfolioNarrativeOut(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-IndustryAnalyticsWindow = Literal["1M", "3M", "6M", "1Y", "5Y"]
+IndustryAnalyticsWindow = Literal["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "10Y"]
+IndustryAnalyticsDateMode = Literal["preset", "custom"]
 IndustryAnalyticsInterval = Literal["daily", "weekly", "monthly"]
 IndustryAnalyticsSortBy = Literal["return", "vol", "sharpe", "alphabetical"]
 IndustryAnalyticsSortOrder = Literal["asc", "desc"]
@@ -267,10 +268,22 @@ IndustryAnalyticsSortOrder = Literal["asc", "desc"]
 
 class IndustryAnalyticsParams(BaseModel):
     window: IndustryAnalyticsWindow = "1Y"
+    date_mode: IndustryAnalyticsDateMode = "preset"
+    start_date: date | None = None
+    end_date: date | None = None
     interval: IndustryAnalyticsInterval = "daily"
     benchmark: str | None = None
     sort_by: IndustryAnalyticsSortBy = "return"
     sort_order: IndustryAnalyticsSortOrder = "desc"
+
+    @model_validator(mode="after")
+    def validate_date_mode(self) -> "IndustryAnalyticsParams":
+        if self.date_mode == "custom":
+            if self.start_date is None or self.end_date is None:
+                raise ValueError("Custom date mode requires both start_date and end_date.")
+            if self.start_date > self.end_date:
+                raise ValueError("start_date must be <= end_date.")
+        return self
 
 
 class IndustryMetricRowOut(BaseModel):
@@ -310,6 +323,9 @@ class IndustryOverviewResponse(BaseModel):
     resolved_ticker_count: int = 0
     unresolved_slugs: list[str] = Field(default_factory=list)
     window: IndustryAnalyticsWindow
+    date_mode: IndustryAnalyticsDateMode = "preset"
+    start_date: date | None = None
+    end_date: date | None = None
     interval: IndustryAnalyticsInterval
     benchmark: str
     sort_by: IndustryAnalyticsSortBy

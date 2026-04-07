@@ -5,6 +5,7 @@ import { getIndustryOverview } from "../api/client";
 import IndustryMatrixHeatmap from "../components/IndustryMatrixHeatmap";
 import { usePortfolioData } from "../state/DataProvider";
 import type {
+  IndustryAnalyticsDateMode,
   IndustryAnalyticsInterval,
   IndustryAnalyticsSortBy,
   IndustryAnalyticsWindow,
@@ -119,6 +120,9 @@ export function getVisibleMarketColumns(preset: ColumnPreset): MarketColumn[] {
 export default function MarketOverviewPage({ dispatch }: Props) {
   const { state: dataState } = usePortfolioData();
   const [window, setWindow] = useState<IndustryAnalyticsWindow>("1Y");
+  const [dateMode, setDateMode] = useState<IndustryAnalyticsDateMode>("preset");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [interval, setInterval] = useState<IndustryAnalyticsInterval>("weekly");
   const [benchmark, setBenchmark] = useState("SPY");
   const [sortBy, setSortBy] = useState<MetricKey>("weight");
@@ -135,11 +139,20 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       setPayload(null);
       return;
     }
+    if (dateMode === "custom" && (!startDate || !endDate)) {
+      setLoading(false);
+      setPayload(null);
+      setError("Custom mode requires both a start and end date.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
     getIndustryOverview(portfolioId, {
       window,
+      dateMode,
+      startDate: dateMode === "custom" ? startDate : undefined,
+      endDate: dateMode === "custom" ? endDate : undefined,
       interval,
       benchmark,
       sortBy: metricKeyToApiSort(sortBy),
@@ -165,7 +178,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [benchmark, dataState.activePortfolioId, interval, sortBy, sortDir, window]);
+  }, [benchmark, dataState.activePortfolioId, dateMode, endDate, interval, sortBy, sortDir, startDate, window]);
 
   const rows = useMemo(() => {
     const base = payload?.rows ?? [];
@@ -224,16 +237,33 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <div className="market-control-group">
             <label>Window</label>
             <div className="market-pill-row">
-              {(["1M", "3M", "6M", "1Y", "5Y"] as IndustryAnalyticsWindow[]).map((item) => (
+              {(["1D", "1W", "1M", "3M", "1Y", "3Y", "5Y", "10Y"] as IndustryAnalyticsWindow[]).map((item) => (
                 <button
                   key={item}
                   className={`overview-period-btn ${window === item ? "active" : ""}`}
-                  onClick={() => setWindow(item)}
+                  onClick={() => {
+                    setWindow(item);
+                    setDateMode("preset");
+                  }}
                 >
                   {item}
                 </button>
               ))}
             </div>
+            <div style={{ marginTop: 10 }}>
+              <button
+                className={`overview-period-btn ${dateMode === "custom" ? "active" : ""}`}
+                onClick={() => setDateMode("custom")}
+              >
+                Custom
+              </button>
+            </div>
+            {dateMode === "custom" ? (
+              <div className="market-pill-row" style={{ marginTop: 8 }}>
+                <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+              </div>
+            ) : null}
           </div>
 
           <div className="market-control-group">
