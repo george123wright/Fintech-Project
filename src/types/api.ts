@@ -609,6 +609,47 @@ export type SecurityEventsResponse = {
   analyst_revisions: AnalystRevisionRow[];
 };
 
+export type IndustryAnalyticsWindow = "1M" | "3M" | "6M" | "1Y" | "5Y";
+
+export type IndustryAnalyticsInterval = "daily" | "weekly" | "monthly";
+
+export type IndustryAnalyticsSortBy = "return" | "vol" | "sharpe" | "alphabetical";
+
+export type IndustryAnalyticsSortOrder = "asc" | "desc";
+
+export type IndustryMetricRow = {
+  industry: string;
+  weight: number;
+  window_return: number | null;
+  volatility_annualized: number | null;
+  sharpe: number | null;
+  beta: number | null;
+  tracking_error: number | null;
+  information_ratio: number | null;
+  max_drawdown: number | null;
+  hit_rate: number | null;
+};
+
+export type IndustryMatrix = {
+  labels: string[];
+  values: Array<Array<number | null>>;
+  sort_context: Record<string, unknown>;
+};
+
+export type IndustryOverviewResponse = {
+  portfolio_id: number;
+  snapshot_id: number;
+  as_of_date: string;
+  window: IndustryAnalyticsWindow;
+  interval: IndustryAnalyticsInterval;
+  benchmark: string;
+  sort_by: IndustryAnalyticsSortBy;
+  sort_order: IndustryAnalyticsSortOrder;
+  rows: IndustryMetricRow[];
+  covariance_matrix: IndustryMatrix;
+  correlation_matrix: IndustryMatrix;
+};
+
 export type NewsArticle = {
   id: string;
   title: string;
