@@ -2062,3 +2062,60 @@ hr {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.chat-markdown-content p {
+  margin: 0;
+}
+
+.chat-markdown-content p + p,
+.chat-markdown-content ul,
+.chat-markdown-content ol,
+.chat-markdown-content pre,
+.chat-markdown-content .katex-display {
+  margin-top: 8px;
+}
+
+.chat-markdown-content code {
+  background: rgba(34, 56, 94, 0.09);
+  border: 1px solid rgba(35, 48, 71, 0.15);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 1px 6px;
+}
+
+.chat-markdown-content pre {
+  background: #16253f;
+  color: #f5f8ff;
+  border-radius: 8px;
+  padding: 10px;
+  overflow-x: auto;
+}
+
+.chat-markdown-content pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.chat-markdown-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(154, 172, 239, 0.12);
+  border: 1px solid rgba(35, 48, 71, 0.12);
+}
+
+.chat-renderer-warning {
+  margin: 0;
+  font-size: 12px;
+  color: #8a5a00;
+}
+
+.chat-renderer-raw {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.4;
+}
