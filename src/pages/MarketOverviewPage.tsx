@@ -1,108 +1,133 @@
-import { useMemo, useState, type Dispatch } from "react";
+import { useEffect, useMemo, useState, type Dispatch } from "react";
 import { ResponsiveContainer, Treemap } from "recharts";
 import DataWarningBanner from "../components/DataWarningBanner";
+import { getIndustryOverview } from "../api/client";
+import IndustryMatrixHeatmap from "../components/IndustryMatrixHeatmap";
 import { usePortfolioData } from "../state/DataProvider";
+import type {
+  IndustryAnalyticsInterval,
+  IndustryAnalyticsSortBy,
+  IndustryAnalyticsWindow,
+  IndustryMetricRow,
+  IndustryOverviewResponse,
+} from "../types/api";
 import type { NavAction } from "../state/nav";
 import { formatPercent } from "../utils/format";
-import IndustryMatrixHeatmap from "../components/IndustryMatrixHeatmap";
 
 type Props = {
   dispatch: Dispatch<NavAction>;
 };
 
-type TimeWindow = "1M" | "3M" | "6M" | "YTD" | "Custom";
-type Interval = "1D" | "1W" | "1M";
-type MetricKey = "industry" | "weight" | "return" | "volatility" | "sharpe" | "beta";
-
-type IndustryMetric = {
-  industry: string;
-  weight: number;
-  ret: number;
-  vol: number;
-  sharpe: number;
-  beta: number;
-};
-
 type SortDirection = "asc" | "desc";
+type MetricKey =
+  | "industry"
+  | "weight"
+  | "window_return"
+  | "volatility_annualized"
+  | "sharpe"
+  | "beta"
+  | "skewness"
+  | "kurtosis"
+  | "var_95"
+  | "cvar_95"
+  | "sortino"
+  | "upside_capture"
+  | "downside_capture";
 
-const INDUSTRY_BASE: IndustryMetric[] = [
-  { industry: "Semiconductors", weight: 18.2, ret: 14.9, vol: 24.4, sharpe: 1.19, beta: 1.24 },
-  { industry: "Software", weight: 14.1, ret: 10.6, vol: 18.3, sharpe: 0.98, beta: 1.06 },
-  { industry: "Financials", weight: 12.4, ret: 8.2, vol: 16.9, sharpe: 0.74, beta: 0.93 },
-  { industry: "Healthcare", weight: 11.7, ret: 6.7, vol: 14.2, sharpe: 0.71, beta: 0.82 },
-  { industry: "Industrials", weight: 9.3, ret: 5.8, vol: 13.5, sharpe: 0.65, beta: 0.88 },
-  { industry: "Energy", weight: 8.1, ret: 4.4, vol: 21.8, sharpe: 0.39, beta: 1.13 },
-  { industry: "Consumer", weight: 10.8, ret: 7.1, vol: 15.3, sharpe: 0.68, beta: 0.9 },
-  { industry: "Comm Services", weight: 8.6, ret: 9.4, vol: 17.1, sharpe: 0.83, beta: 1.01 },
-  { industry: "Utilities", weight: 6.8, ret: 3.1, vol: 10.1, sharpe: 0.42, beta: 0.52 },
-];
+function asFinite(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
-const MATRIX_TEMPLATE = [
-  [1, 0.62, 0.41, 0.29, 0.36, 0.48, 0.44, 0.5, 0.22],
-  [0.62, 1, 0.45, 0.34, 0.32, 0.36, 0.4, 0.52, 0.27],
-  [0.41, 0.45, 1, 0.38, 0.57, 0.43, 0.49, 0.35, 0.19],
-  [0.29, 0.34, 0.38, 1, 0.33, 0.21, 0.4, 0.27, 0.31],
-  [0.36, 0.32, 0.57, 0.33, 1, 0.54, 0.46, 0.39, 0.24],
-  [0.48, 0.36, 0.43, 0.21, 0.54, 1, 0.4, 0.28, 0.2],
-  [0.44, 0.4, 0.49, 0.4, 0.46, 0.4, 1, 0.44, 0.25],
-  [0.5, 0.52, 0.35, 0.27, 0.39, 0.28, 0.44, 1, 0.2],
-  [0.22, 0.27, 0.19, 0.31, 0.24, 0.2, 0.25, 0.2, 1],
-];
+function fmtNum(value: number | null | undefined, digits = 2): string {
+  const safe = asFinite(value);
+  return safe == null ? "N/A" : safe.toFixed(digits);
+}
 
-function scaleByWindow(window: TimeWindow): number {
-  if (window === "1M") return 0.65;
-  if (window === "3M") return 0.82;
-  if (window === "6M") return 0.92;
-  if (window === "YTD") return 1;
-  return 1.08;
+function metricKeyToApiSort(metric: MetricKey): IndustryAnalyticsSortBy {
+  if (metric === "industry") return "alphabetical";
+  if (metric === "volatility_annualized") return "vol";
+  if (metric === "sharpe") return "sharpe";
+  return "return";
 }
 
 export default function MarketOverviewPage({ dispatch }: Props) {
   const { state: dataState } = usePortfolioData();
-  const [window, setWindow] = useState<TimeWindow>("YTD");
-  const [interval, setInterval] = useState<Interval>("1W");
+  const [window, setWindow] = useState<IndustryAnalyticsWindow>("1Y");
+  const [interval, setInterval] = useState<IndustryAnalyticsInterval>("weekly");
   const [benchmark, setBenchmark] = useState("SPY");
-  const [confidence, setConfidence] = useState(95);
   const [sortBy, setSortBy] = useState<MetricKey>("weight");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
+  const [showAdvanced, setShowAdvanced] = useState(true);
+  const [payload, setPayload] = useState<IndustryOverviewResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const portfolioId = dataState.activePortfolioId;
+    if (portfolioId == null) {
+      setPayload(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    getIndustryOverview(portfolioId, {
+      window,
+      interval,
+      benchmark,
+      sortBy: metricKeyToApiSort(sortBy),
+      sortOrder: sortDir,
+    })
+      .then((response) => {
+        if (!cancelled) {
+          setPayload(response);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPayload(null);
+          setError((err as Error).message || "Failed to load industry analytics");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [benchmark, dataState.activePortfolioId, interval, sortBy, sortDir, window]);
 
   const rows = useMemo(() => {
-    const scale = scaleByWindow(window);
-    const intervalScale = interval === "1D" ? 0.92 : interval === "1W" ? 1 : 1.11;
-    const confidenceScale = confidence >= 99 ? 1.08 : confidence >= 97 ? 1.04 : 1;
-
-    return INDUSTRY_BASE.map((row) => ({
-      ...row,
-      ret: Number((row.ret * scale * intervalScale).toFixed(2)),
-      vol: Number((row.vol * confidenceScale).toFixed(2)),
-      sharpe: Number((row.sharpe * scale / intervalScale).toFixed(2)),
-      beta: Number((row.beta * (benchmark === "QQQ" ? 1.06 : benchmark === "IWM" ? 1.11 : 1)).toFixed(2)),
-    }));
-  }, [benchmark, confidence, interval, window]);
-
-  const sortedRows = useMemo(() => sortIndustryRows(rows, sortBy, sortDir), [rows, sortBy, sortDir]);
-
-
-  const covariance = useMemo(() => {
-    return MATRIX_TEMPLATE.map((matrixRow, rowIdx) =>
-      matrixRow.map((corr, colIdx) => {
-        const volA = rows[rowIdx]?.vol ?? 0;
-        const volB = rows[colIdx]?.vol ?? 0;
-        return Number(((corr * volA * volB) / 10000).toFixed(3));
-      })
-    );
-  }, [rows]);
+    const base = payload?.rows ?? [];
+    return sortIndustryRows(base, sortBy, sortDir);
+  }, [payload?.rows, sortBy, sortDir]);
 
   const warnings = useMemo(
     () => [
       ...dataState.dataWarnings,
-      "Sector composition derived from holdings mapping and may lag latest filings.",
-      confidence >= 99 ? "99% confidence can amplify covariance estimates for cyclical clusters." : "",
-    ].filter(Boolean),
-    [confidence, dataState.dataWarnings]
+      ...(error ? [error] : []),
+      ...(payload == null ? [] : [`Showing ${rows.length} industries from current portfolio holdings universe.`]),
+    ],
+    [dataState.dataWarnings, error, payload, rows.length]
   );
 
-  const totalWeight = rows.reduce((acc, row) => acc + row.weight, 0);
+  const totalWeight = rows.reduce((acc, row) => acc + (asFinite(row.weight) ?? 0), 0);
+
+  const matrixRows = useMemo(
+    () =>
+      rows.map((row) => ({
+        industry: row.industry,
+        ret: asFinite(row.window_return) ?? 0,
+        vol: asFinite(row.volatility_annualized) ?? 0,
+        sharpe: asFinite(row.sharpe) ?? 0,
+        beta: asFinite(row.beta) ?? 0,
+      })),
+    [rows]
+  );
 
   const onSort = (next: MetricKey) => {
     const nextState = getNextSortState(sortBy, sortDir, next);
@@ -129,7 +154,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <div className="market-control-group">
             <label>Window</label>
             <div className="market-pill-row">
-              {(["1M", "3M", "6M", "YTD", "Custom"] as TimeWindow[]).map((item) => (
+              {(["1M", "3M", "6M", "1Y", "5Y"] as IndustryAnalyticsWindow[]).map((item) => (
                 <button
                   key={item}
                   className={`overview-period-btn ${window === item ? "active" : ""}`}
@@ -143,10 +168,10 @@ export default function MarketOverviewPage({ dispatch }: Props) {
 
           <div className="market-control-group">
             <label>Interval</label>
-            <select value={interval} onChange={(event) => setInterval(event.target.value as Interval)}>
-              <option value="1D">Daily</option>
-              <option value="1W">Weekly</option>
-              <option value="1M">Monthly</option>
+            <select value={interval} onChange={(event) => setInterval(event.target.value as IndustryAnalyticsInterval)}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
             </select>
           </div>
 
@@ -160,13 +185,10 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           </div>
 
           <div className="market-control-group">
-            <label>Confidence</label>
-            <select value={confidence} onChange={(event) => setConfidence(Number(event.target.value))}>
-              <option value={90}>90%</option>
-              <option value={95}>95%</option>
-              <option value={97}>97%</option>
-              <option value={99}>99%</option>
-            </select>
+            <label>Columns</label>
+            <button className="btn-secondary" onClick={() => setShowAdvanced((prev) => !prev)}>
+              {showAdvanced ? "Hide advanced" : "Show advanced"}
+            </button>
           </div>
         </div>
       </section>
@@ -175,42 +197,59 @@ export default function MarketOverviewPage({ dispatch }: Props) {
         <div className="overview-widget-shell market-table-shell">
           <div className="overview-lens-header">
             <h3 className="overview-lens-panel-title">Industry Metrics</h3>
-            <span className="overview-lens-badge">Total Weight {formatPercent(totalWeight, 1)}</span>
+            <span className="overview-lens-badge">Total Weight {formatPercent(totalWeight * 100, 1)}</span>
           </div>
           <table className="table market-table">
             <thead>
               <tr>
-                <th>
-                  <button className="market-sort-btn" onClick={() => onSort("industry")}>Industry</button>
-                </th>
-                <th className="right">
-                  <button className="market-sort-btn" onClick={() => onSort("weight")}>Weight</button>
-                </th>
-                <th className="right">
-                  <button className="market-sort-btn" onClick={() => onSort("return")}>Return</button>
-                </th>
-                <th className="right">
-                  <button className="market-sort-btn" onClick={() => onSort("volatility")}>Volatility</button>
-                </th>
-                <th className="right">
-                  <button className="market-sort-btn" onClick={() => onSort("sharpe")}>Sharpe</button>
-                </th>
-                <th className="right">
-                  <button className="market-sort-btn" onClick={() => onSort("beta")}>Beta</button>
-                </th>
+                <th><button className="market-sort-btn" onClick={() => onSort("industry")}>Industry</button></th>
+                <th className="right"><button className="market-sort-btn" onClick={() => onSort("weight")}>Weight</button></th>
+                <th className="right"><button className="market-sort-btn" onClick={() => onSort("window_return")}>Return</button></th>
+                <th className="right"><button className="market-sort-btn" onClick={() => onSort("volatility_annualized")}>Volatility</button></th>
+                <th className="right"><button className="market-sort-btn" onClick={() => onSort("sharpe")}>Sharpe</button></th>
+                <th className="right"><button className="market-sort-btn" onClick={() => onSort("beta")}>Beta</button></th>
+                {showAdvanced ? (
+                  <>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("sortino")}>Sortino</button></th>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("skewness")}>Skew</button></th>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("kurtosis")}>Kurt</button></th>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("var_95")}>VaR 95%</button></th>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("cvar_95")}>ES 95%</button></th>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("upside_capture")}>Upside Cap</button></th>
+                    <th className="right"><button className="market-sort-btn" onClick={() => onSort("downside_capture")}>Downside Cap</button></th>
+                  </>
+                ) : null}
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.industry}>
                   <td>{row.industry}</td>
-                  <td className="right">{formatPercent(row.weight, 1)}</td>
-                  <td className={`right ${row.ret >= 0 ? "positive" : "negative"}`}>{formatPercent(row.ret, 1)}</td>
-                  <td className="right">{formatPercent(row.vol, 1)}</td>
-                  <td className="right">{row.sharpe.toFixed(2)}</td>
-                  <td className="right">{row.beta.toFixed(2)}</td>
+                  <td className="right">{formatPercent(row.weight * 100, 1)}</td>
+                  <td className={`right ${(row.window_return ?? 0) >= 0 ? "positive" : "negative"}`}>
+                    {row.window_return == null ? "N/A" : formatPercent(row.window_return * 100, 1)}
+                  </td>
+                  <td className="right">{row.volatility_annualized == null ? "N/A" : formatPercent(row.volatility_annualized * 100, 1)}</td>
+                  <td className="right">{fmtNum(row.sharpe)}</td>
+                  <td className="right">{fmtNum(row.beta)}</td>
+                  {showAdvanced ? (
+                    <>
+                      <td className="right">{fmtNum(row.sortino)}</td>
+                      <td className="right">{fmtNum(row.skewness)}</td>
+                      <td className="right">{fmtNum(row.kurtosis)}</td>
+                      <td className="right">{row.var_95 == null ? "N/A" : formatPercent(row.var_95 * 100, 1)}</td>
+                      <td className="right">{row.cvar_95 == null ? "N/A" : formatPercent(row.cvar_95 * 100, 1)}</td>
+                      <td className="right">{fmtNum(row.upside_capture)}</td>
+                      <td className="right">{fmtNum(row.downside_capture)}</td>
+                    </>
+                  ) : null}
                 </tr>
               ))}
+              {!loading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={showAdvanced ? 13 : 6}>No industry analytics rows available for this portfolio/window.</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -222,7 +261,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <div style={{ width: "100%", height: 290 }}>
             <ResponsiveContainer>
               <Treemap
-                data={rows.map((row) => ({ name: row.industry, size: row.weight, ret: row.ret }))}
+                data={rows.map((row) => ({ name: row.industry, size: row.weight, ret: row.window_return ?? 0 }))}
                 dataKey="size"
                 nameKey="name"
                 stroke="rgba(216,197,179,0.75)"
@@ -234,23 +273,26 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       </section>
 
       <section className="overview-main-shell market-heatmap-grid">
-        <IndustryMatrixHeatmap rows={rows} covarianceMatrix={covariance} correlationMatrix={MATRIX_TEMPLATE} />
+        <IndustryMatrixHeatmap
+          rows={matrixRows}
+          covarianceMatrix={payload?.covariance_matrix.values ?? []}
+          correlationMatrix={payload?.correlation_matrix.values ?? []}
+        />
       </section>
 
       <div className="overview-extended-note">
-        Industry matrix is a blended estimate from current holdings exposure and benchmark-relative historical co-movement.
+        Industry matrix is derived from live portfolio holdings industry exposures for the selected interval/window.
       </div>
     </div>
   );
 }
 
-export function sortIndustryRows(rows: IndustryMetric[], sortBy: MetricKey, sortDir: SortDirection): IndustryMetric[] {
+export function sortIndustryRows(rows: IndustryMetricRow[], sortBy: MetricKey, sortDir: SortDirection): IndustryMetricRow[] {
   return [...rows].sort((a, b) => {
-    const pickMetric = (row: IndustryMetric) => {
+    const pickMetric = (row: IndustryMetricRow): string | number => {
       if (sortBy === "industry") return row.industry;
-      if (sortBy === "return") return row.ret;
-      if (sortBy === "volatility") return row.vol;
-      return row[sortBy];
+      const value = row[sortBy];
+      return typeof value === "number" ? value : Number.NEGATIVE_INFINITY;
     };
     const left = pickMetric(a);
     const right = pickMetric(b);
@@ -263,7 +305,7 @@ export function sortIndustryRows(rows: IndustryMetric[], sortBy: MetricKey, sort
 
 export function getNextSortState(currentBy: MetricKey, currentDir: SortDirection, nextBy: MetricKey) {
   if (currentBy === nextBy) {
-    return { sortBy: currentBy, sortDir: currentDir === "asc" ? "desc" : "asc" as SortDirection };
+    return { sortBy: currentBy, sortDir: (currentDir === "asc" ? "desc" : "asc") as SortDirection };
   }
-  return { sortBy: nextBy, sortDir: nextBy === "industry" ? "asc" : "desc" as SortDirection };
+  return { sortBy: nextBy, sortDir: (nextBy === "industry" ? "asc" : "desc") as SortDirection };
 }

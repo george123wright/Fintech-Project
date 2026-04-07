@@ -374,6 +374,7 @@ def compute_industry_return_metrics(
         obs = len(ret)
         industry_metrics: dict[str, float | None] = {
             "window_return": float((1.0 + ret).prod() - 1.0) if obs >= min_obs["window_return"] else None,
+            "annualized_return": ann_return if obs >= min_obs["window_return"] else None,
             "volatility_periodic": periodic_vol if obs >= min_obs["volatility_periodic"] else None,
             "volatility_annualized": ann_vol if obs >= min_obs["volatility_annualized"] else None,
             "skewness": float(ret.skew()) if obs >= min_obs["skewness"] else None,
