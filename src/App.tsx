@@ -1,5 +1,6 @@
 import { useReducer, type ReactNode } from "react";
 import TopNav from "./components/TopNav";
+import GlobalChatWidget from "./components/GlobalChatWidget";
 import ChartPage from "./pages/ChartPage";
 import LensPage from "./pages/LensPage";
 import MacroPage from "./pages/MacroPage";
@@ -59,6 +60,7 @@ export default function App() {
     <div className="lens-app">
       <TopNav state={state} dispatch={dispatch} />
       <main className="page-shell">{page}</main>
+      <GlobalChatWidget />
     </div>
   );
 }
