@@ -1,10 +1,10 @@
 import { useMemo, useState, type Dispatch } from "react";
-import Plot from "react-plotly.js";
 import { ResponsiveContainer, Treemap } from "recharts";
 import DataWarningBanner from "../components/DataWarningBanner";
 import { usePortfolioData } from "../state/DataProvider";
 import type { NavAction } from "../state/nav";
 import { formatPercent } from "../utils/format";
+import IndustryMatrixHeatmap from "../components/IndustryMatrixHeatmap";
 
 type Props = {
   dispatch: Dispatch<NavAction>;
@@ -96,7 +96,6 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     return sorted;
   }, [rows, sortBy, sortDir]);
 
-  const labels = rows.map((item) => item.industry);
 
   const covariance = useMemo(() => {
     return MATRIX_TEMPLATE.map((matrixRow, rowIdx) =>
@@ -252,64 +251,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       </section>
 
       <section className="overview-main-shell market-heatmap-grid">
-        <div className="overview-chart-shell">
-          <div className="overview-lens-header">
-            <h3 className="overview-lens-panel-title">Covariance Heatmap</h3>
-          </div>
-          <Plot
-            data={[
-              {
-                z: covariance,
-                x: labels,
-                y: labels,
-                type: "heatmap",
-                colorscale: "Viridis",
-                reversescale: false,
-              },
-            ]}
-            layout={{
-              autosize: true,
-              margin: { l: 90, r: 20, t: 12, b: 90 },
-              paper_bgcolor: "rgba(0,0,0,0)",
-              plot_bgcolor: "rgba(0,0,0,0)",
-              font: { family: "Inter, sans-serif", size: 11, color: "#7e746d" },
-            }}
-            style={{ width: "100%", height: "320px" }}
-            config={{ displayModeBar: false, responsive: true }}
-          />
-        </div>
-
-        <div className="overview-chart-shell">
-          <div className="overview-lens-header">
-            <h3 className="overview-lens-panel-title">Correlation Heatmap</h3>
-          </div>
-          <Plot
-            data={[
-              {
-                z: MATRIX_TEMPLATE,
-                x: labels,
-                y: labels,
-                type: "heatmap",
-                zmin: -1,
-                zmax: 1,
-                colorscale: [
-                  [0, "#cf6d74"],
-                  [0.5, "#f8f5ef"],
-                  [1, "#0f6b73"],
-                ],
-              },
-            ]}
-            layout={{
-              autosize: true,
-              margin: { l: 90, r: 20, t: 12, b: 90 },
-              paper_bgcolor: "rgba(0,0,0,0)",
-              plot_bgcolor: "rgba(0,0,0,0)",
-              font: { family: "Inter, sans-serif", size: 11, color: "#7e746d" },
-            }}
-            style={{ width: "100%", height: "320px" }}
-            config={{ displayModeBar: false, responsive: true }}
-          />
-        </div>
+        <IndustryMatrixHeatmap rows={rows} covarianceMatrix={covariance} correlationMatrix={MATRIX_TEMPLATE} />
       </section>
 
       <div className="overview-extended-note">
