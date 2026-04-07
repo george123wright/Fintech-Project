@@ -126,11 +126,16 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
         <div className="market-pill-row">
           <button className={`overview-period-btn ${mode === "covariance" ? "active" : ""}`} onClick={() => setMode("covariance")}>Covariance</button>
           <button className={`overview-period-btn ${mode === "correlation" ? "active" : ""}`} onClick={() => setMode("correlation")}>Correlation</button>
-          <button className="overview-period-btn" onClick={toggleFullscreen}>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button
+            className="overview-period-btn"
+            onClick={toggleFullscreen}
+            title="Toggle full screen view"
+            style={{ borderColor: "var(--accent)", color: "var(--text)" }}
+          >
             {isFullscreen ? "Exit Full Screen" : "Full Screen"}
           </button>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <label style={{ fontSize: 12, color: "#7e746d" }}>Sort</label>
           <select value={sortOption} onChange={(event) => setSortOption(event.target.value as SortOption)}>
             <option value="alphabetical">Alphabetical</option>
