@@ -7,14 +7,14 @@ const LIGHT_GRID = "#dbe3f3";
 const LIGHT_TEXT = "#233047";
 
 const PALETTE = [
-  "#7b6ef6",
-  "#5b8ef0",
-  "#3dd68c",
-  "#f0b959",
-  "#f05b5b",
-  "#e8a838",
-  "#4cb7c5",
-  "#9ea7ff",
+  "#8ea0e3",
+  "#0f6b73",
+  "#7fa7a1",
+  "#b39047",
+  "#cf6d74",
+  "#6f7d96",
+  "#c6b08a",
+  "#aeb8cc",
 ];
 
 export type FrontierHolding = {
@@ -134,16 +134,22 @@ export function buildDonutChart(
       type: "pie",
       labels,
       values,
-      hole: 0.62,
-      marker: { colors, line: { color: "#111118", width: 3 } },
+      hole: 0.68,
+      sort: false,
+      direction: "clockwise",
+      marker: {
+        colors,
+        line: { color: LIGHT_SURFACE, width: 2 },
+      },
       textinfo: "none",
       hovertemplate: "<b>%{label}</b><br>%{value:.1f}%<extra></extra>",
     },
   ];
 
   const layout: Partial<Layout> = {
-    plot_bgcolor: "#111118",
-    paper_bgcolor: "#111118",
+    plot_bgcolor: LIGHT_SURFACE,
+    paper_bgcolor: LIGHT_SURFACE,
+    font: { family: "\"Source Sans 3\", sans-serif", color: MUTED, size: 11 },
     margin: { l: 10, r: 10, t: 10, b: 10 },
     showlegend: false,
     height: 220,
@@ -153,7 +159,7 @@ export function buildDonutChart(
         x: 0.5,
         y: 0.5,
         showarrow: false,
-        font: { size: 13, color: "#e8e8f0" },
+        font: { family: "\"Libre Baskerville\", serif", size: 16, color: LIGHT_TEXT },
       },
     ],
   };
