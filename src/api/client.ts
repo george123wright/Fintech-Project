@@ -18,6 +18,11 @@ import type {
   UploadValidationReport,
   SecurityValuation,
   GuidedMacroWorkflowResponse,
+  IndustryAnalyticsInterval,
+  IndustryAnalyticsSortBy,
+  IndustryAnalyticsSortOrder,
+  IndustryAnalyticsWindow,
+  IndustryOverviewResponse,
   ScenarioMetadataResponse,
   ScenarioTemplate,
   ScenarioPreviewRequest,
@@ -115,6 +120,38 @@ export async function getExtendedAnalytics(
   portfolioId: number
 ): Promise<ExtendedAnalyticsResponse> {
   return request<ExtendedAnalyticsResponse>(`/portfolios/${portfolioId}/analytics/extended`);
+}
+
+export async function getIndustryOverview(
+  portfolioId: number,
+  options?: {
+    window?: IndustryAnalyticsWindow;
+    interval?: IndustryAnalyticsInterval;
+    benchmark?: string;
+    sortBy?: IndustryAnalyticsSortBy;
+    sortOrder?: IndustryAnalyticsSortOrder;
+  }
+): Promise<IndustryOverviewResponse> {
+  const query = new URLSearchParams();
+  if (options?.window) {
+    query.set("window", options.window);
+  }
+  if (options?.interval) {
+    query.set("interval", options.interval);
+  }
+  if (options?.benchmark) {
+    query.set("benchmark", options.benchmark);
+  }
+  if (options?.sortBy) {
+    query.set("sort_by", options.sortBy);
+  }
+  if (options?.sortOrder) {
+    query.set("sort_order", options.sortOrder);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<IndustryOverviewResponse>(
+    `/portfolios/${portfolioId}/analytics/industry${suffix}`
+  );
 }
 
 export async function getPrices(
