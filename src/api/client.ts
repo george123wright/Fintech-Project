@@ -132,6 +132,19 @@ export async function getIndustryOverview(
     sortOrder?: IndustryAnalyticsSortOrder;
   }
 ): Promise<IndustryOverviewResponse> {
+  const suffix = buildIndustryOverviewQuery(options);
+  return request<IndustryOverviewResponse>(
+    `/portfolios/${portfolioId}/analytics/industry${suffix}`
+  );
+}
+
+export function buildIndustryOverviewQuery(options?: {
+  window?: IndustryAnalyticsWindow;
+  interval?: IndustryAnalyticsInterval;
+  benchmark?: string;
+  sortBy?: IndustryAnalyticsSortBy;
+  sortOrder?: IndustryAnalyticsSortOrder;
+}): string {
   const query = new URLSearchParams();
   if (options?.window) {
     query.set("window", options.window);
@@ -148,10 +161,7 @@ export async function getIndustryOverview(
   if (options?.sortOrder) {
     query.set("sort_order", options.sortOrder);
   }
-  const suffix = query.toString() ? `?${query.toString()}` : "";
-  return request<IndustryOverviewResponse>(
-    `/portfolios/${portfolioId}/analytics/industry${suffix}`
-  );
+  return query.toString() ? `?${query.toString()}` : "";
 }
 
 export async function getPrices(

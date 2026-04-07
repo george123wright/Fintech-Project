@@ -25,7 +25,7 @@ type Props = {
   correlationMatrix: number[][];
 };
 
-function reorderMatrix(matrix: number[][], orderedIndices: number[]) {
+export function reorderMatrix(matrix: number[][], orderedIndices: number[]) {
   return orderedIndices.map((rowIndex) => orderedIndices.map((colIndex) => matrix[rowIndex]?.[colIndex] ?? 0));
 }
 

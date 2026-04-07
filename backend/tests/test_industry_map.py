@@ -48,3 +48,16 @@ def test_validator_flags_obvious_typo() -> None:
 
     issues = validate_industry_map(broken)
     assert any("Beverages - Alcoholic" in issue for issue in issues)
+
+
+def test_validator_flags_slug_normalization_issues() -> None:
+    broken = list(INDUSTRY_MAP)
+    first = broken[0]
+    broken[0] = type(first)(
+        slug="  not-normalized slug  ",
+        display=first.display,
+        sector_bucket=first.sector_bucket,
+    )
+
+    issues = validate_industry_map(broken)
+    assert any("space-free" in issue for issue in issues)

@@ -23,6 +23,8 @@ type IndustryMetric = {
   beta: number;
 };
 
+type SortDirection = "asc" | "desc";
+
 const INDUSTRY_BASE: IndustryMetric[] = [
   { industry: "Semiconductors", weight: 18.2, ret: 14.9, vol: 24.4, sharpe: 1.19, beta: 1.24 },
   { industry: "Software", weight: 14.1, ret: 10.6, vol: 18.3, sharpe: 0.98, beta: 1.06 },
@@ -62,7 +64,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   const [benchmark, setBenchmark] = useState("SPY");
   const [confidence, setConfidence] = useState(95);
   const [sortBy, setSortBy] = useState<MetricKey>("weight");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortDir, setSortDir] = useState<SortDirection>("desc");
 
   const rows = useMemo(() => {
     const scale = scaleByWindow(window);
@@ -78,23 +80,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     }));
   }, [benchmark, confidence, interval, window]);
 
-  const sortedRows = useMemo(() => {
-    const sorted = [...rows].sort((a, b) => {
-      const pickMetric = (row: IndustryMetric) => {
-        if (sortBy === "industry") return row.industry;
-        if (sortBy === "return") return row.ret;
-        if (sortBy === "volatility") return row.vol;
-        return row[sortBy];
-      };
-      const left = pickMetric(a);
-      const right = pickMetric(b);
-      if (typeof left === "string" && typeof right === "string") {
-        return sortDir === "asc" ? left.localeCompare(right) : right.localeCompare(left);
-      }
-      return sortDir === "asc" ? Number(left) - Number(right) : Number(right) - Number(left);
-    });
-    return sorted;
-  }, [rows, sortBy, sortDir]);
+  const sortedRows = useMemo(() => sortIndustryRows(rows, sortBy, sortDir), [rows, sortBy, sortDir]);
 
 
   const covariance = useMemo(() => {
@@ -119,12 +105,9 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   const totalWeight = rows.reduce((acc, row) => acc + row.weight, 0);
 
   const onSort = (next: MetricKey) => {
-    if (sortBy === next) {
-      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-      return;
-    }
-    setSortBy(next);
-    setSortDir(next === "industry" ? "asc" : "desc");
+    const nextState = getNextSortState(sortBy, sortDir, next);
+    setSortBy(nextState.sortBy);
+    setSortDir(nextState.sortDir);
   };
 
   return (
@@ -259,4 +242,28 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       </div>
     </div>
   );
+}
+
+export function sortIndustryRows(rows: IndustryMetric[], sortBy: MetricKey, sortDir: SortDirection): IndustryMetric[] {
+  return [...rows].sort((a, b) => {
+    const pickMetric = (row: IndustryMetric) => {
+      if (sortBy === "industry") return row.industry;
+      if (sortBy === "return") return row.ret;
+      if (sortBy === "volatility") return row.vol;
+      return row[sortBy];
+    };
+    const left = pickMetric(a);
+    const right = pickMetric(b);
+    if (typeof left === "string" && typeof right === "string") {
+      return sortDir === "asc" ? left.localeCompare(right) : right.localeCompare(left);
+    }
+    return sortDir === "asc" ? Number(left) - Number(right) : Number(right) - Number(left);
+  });
+}
+
+export function getNextSortState(currentBy: MetricKey, currentDir: SortDirection, nextBy: MetricKey) {
+  if (currentBy === nextBy) {
+    return { sortBy: currentBy, sortDir: currentDir === "asc" ? "desc" : "asc" as SortDirection };
+  }
+  return { sortBy: nextBy, sortDir: nextBy === "industry" ? "asc" : "desc" as SortDirection };
 }
