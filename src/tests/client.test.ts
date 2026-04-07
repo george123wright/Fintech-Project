@@ -29,6 +29,10 @@ describe("industry query mapping", () => {
   it("returns empty suffix when no options provided", () => {
     expect(buildIndustryOverviewQuery()).toBe("");
   });
+
+  it("includes scope when provided", () => {
+    expect(buildIndustryOverviewQuery({ scope: "sector_map" })).toBe("?scope=sector_map");
+  });
 });
 
 describe("postChatQuery", () => {

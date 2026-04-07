@@ -106,6 +106,23 @@ def test_fetch_industry_price_panel_uses_batch_cache(monkeypatch) -> None:
     assert calls["count"] == 1
 
 
+def test_fetch_sector_price_panel_renames_to_sector_labels(monkeypatch) -> None:
+    idx = pd.date_range("2026-01-01", periods=2)
+    raw = pd.DataFrame(
+        {
+            ("Close", "^YH311"): [100.0, 101.0],
+            ("Close", "^YH309"): [90.0, 91.0],
+        },
+        index=idx,
+    )
+
+    monkeypatch.setattr(ia.yf, "download", lambda *args, **kwargs: raw)
+    ia._price_panel_cache.clear()
+
+    panel = ia.fetch_sector_price_panel(start="2026-01-01", end="2026-01-10")
+    assert set(panel.columns) == {"Technology", "Energy"}
+
+
 def test_map_tickers_to_display_industries_two_step_and_safe_collapse() -> None:
     df = pd.DataFrame({"IGV": [0.01, 0.02], "SOXX": [0.03, 0.04]}, index=pd.date_range("2026-01-01", periods=2))
 
@@ -413,3 +430,54 @@ def test_industry_analytics_route_custom_date_mode_uses_explicit_dates(monkeypat
 
     assert captured["start"] == date(2026, 3, 1)
     assert captured["end"] == date(2026, 3, 31)
+
+
+def test_industry_analytics_route_sector_map_scope(monkeypatch) -> None:
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        portfolio = ensure_default_portfolio(db)
+        snapshot = HoldingsSnapshot(portfolio_id=portfolio.id, as_of_date=date(2026, 4, 1))
+        db.add(snapshot)
+        db.flush()
+        db.add(
+            HoldingsPosition(
+                snapshot_id=snapshot.id,
+                symbol="AAPL",
+                market_value=1000.0,
+                currency="USD",
+                weight=1.0,
+            )
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            portfolios,
+            "fetch_sector_price_panel",
+            lambda **_kwargs: pd.DataFrame(
+                {
+                    "Technology": [100.0, 101.0, 102.0, 103.0],
+                    "Energy": [90.0, 92.0, 91.0, 93.0],
+                },
+                index=pd.date_range("2026-03-01", periods=4, freq="D"),
+            ),
+        )
+        monkeypatch.setattr(
+            portfolios,
+            "get_symbols_price_frame",
+            lambda *_args, **_kwargs: pd.DataFrame(
+                {"SPY": [500.0, 502.0, 501.0, 503.0]},
+                index=pd.date_range("2026-03-01", periods=4, freq="D"),
+            ),
+        )
+
+        out = portfolios.industry_analytics_route(
+            portfolio_id=portfolio.id,
+            params=IndustryAnalyticsParams(),
+            scope="sector_map",
+            db=db,
+        )
+
+    assert out.scope == "sector_map"
+    assert out.resolved_ticker_count == 2
+    assert out.mapped_industry_count == 2
+    assert {row.industry for row in out.rows} == {"Technology", "Energy"}

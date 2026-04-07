@@ -318,7 +318,7 @@ class IndustryOverviewResponse(BaseModel):
     portfolio_id: int
     snapshot_id: int
     as_of_date: date
-    scope: Literal["holdings", "industry_map"] = "industry_map"
+    scope: Literal["holdings", "industry_map", "sector_map"] = "industry_map"
     mapped_industry_count: int = 0
     resolved_ticker_count: int = 0
     unresolved_slugs: list[str] = Field(default_factory=list)

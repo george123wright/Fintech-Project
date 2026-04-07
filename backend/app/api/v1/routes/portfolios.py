@@ -62,6 +62,7 @@ from app.services.industry_analytics import (
     build_industry_return_matrices,
     compute_industry_return_metrics,
     fetch_industry_price_panel,
+    fetch_sector_price_panel,
     map_tickers_to_display_industries,
     resolve_industry_ticker_map,
 )
@@ -471,7 +472,7 @@ def extended_analytics_route(portfolio_id: int, db: Session = Depends(get_db)) -
 def industry_analytics_route(
     portfolio_id: int,
     params: Annotated[IndustryAnalyticsParams, Depends(_industry_analytics_params)],
-    scope: Literal["holdings", "industry_map"] = Query("industry_map"),
+    scope: Literal["holdings", "industry_map", "sector_map"] = Query("industry_map"),
     db: Session = Depends(get_db),
 ) -> IndustryOverviewResponse:
     portfolio = get_portfolio_or_404(db, portfolio_id)
@@ -545,6 +546,23 @@ def industry_analytics_route(
         if returns_panel.empty:
             raise HTTPException(status_code=404, detail="Unable to compute industry return panel")
         mapped_industry_count = len(list(returns_panel.columns))
+    elif scope == "sector_map":
+        sector_prices = fetch_sector_price_panel(
+            start=start_date,
+            end=end_date,
+        )
+        if params.interval == "weekly":
+            sector_prices = sector_prices.resample("W-FRI").last().dropna(how="all")
+        elif params.interval == "monthly":
+            sector_prices = sector_prices.resample("ME").last().dropna(how="all")
+        sector_prices = sector_prices.sort_index().apply(pd.to_numeric, errors="coerce").ffill()
+        returns_panel = sector_prices.pct_change(fill_method=None)
+        returns_panel = returns_panel.T.groupby(level=0).mean().T
+        returns_panel = returns_panel.dropna(axis=0, how="all").dropna(axis=1, how="all")
+        if returns_panel.empty:
+            raise HTTPException(status_code=404, detail="Unable to compute sector return panel")
+        mapped_industry_count = len(list(returns_panel.columns))
+        resolved_ticker_count = len(list(sector_prices.columns))
     else:
         symbols = list(symbol_weights.keys())
         prices = get_symbols_price_frame(db, symbols, start_date, end_date)

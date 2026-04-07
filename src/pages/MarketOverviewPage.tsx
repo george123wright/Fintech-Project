@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type Dispatch } from "react";
 import { ResponsiveContainer, Treemap } from "recharts";
 import DataWarningBanner from "../components/DataWarningBanner";
-import { getIndustryOverview, getMacroForecasts } from "../api/client";
+import { getIndustryOverview, getMacroForecasts, getSectorOverview } from "../api/client";
 import IndustryMatrixHeatmap from "../components/IndustryMatrixHeatmap";
 import { usePortfolioData } from "../state/DataProvider";
 import type {
@@ -21,7 +21,7 @@ type Props = {
 };
 
 type SortDirection = "asc" | "desc";
-type MarketSection = "macro" | "industry";
+type MarketSection = "macro" | "industry" | "sector";
 type MetricKey =
   | "industry"
   | "weight"
@@ -155,7 +155,13 @@ export default function MarketOverviewPage({ dispatch }: Props) {
 
     setLoading(true);
     setError(null);
-    getIndustryOverview(portfolioId, {
+    if (section === "macro") {
+      setLoading(false);
+      return;
+    }
+
+    const load = section === "sector" ? getSectorOverview : getIndustryOverview;
+    load(portfolioId, {
       window,
       dateMode,
       startDate: dateMode === "custom" ? startDate : undefined,
@@ -173,7 +179,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       .catch((err) => {
         if (!cancelled) {
           setPayload(null);
-          setError((err as Error).message || "Failed to load industry analytics");
+          setError((err as Error).message || `Failed to load ${section} analytics`);
         }
       })
       .finally(() => {
@@ -185,7 +191,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [benchmark, dataState.activePortfolioId, dateMode, endDate, interval, sortBy, sortDir, startDate, window]);
+  }, [benchmark, dataState.activePortfolioId, dateMode, endDate, interval, section, sortBy, sortDir, startDate, window]);
 
   useEffect(() => {
     if (section !== "macro") return;
@@ -233,9 +239,9 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     () => [
       ...dataState.dataWarnings,
       ...(error ? [error] : []),
-      ...(payload == null ? [] : [`Showing ${rows.length} industries from current portfolio holdings universe.`]),
+      ...(payload == null ? [] : [`Showing ${rows.length} ${section === "sector" ? "sectors" : "industries"} from current market universe.`]),
     ],
-    [dataState.dataWarnings, error, payload, rows.length]
+    [dataState.dataWarnings, error, payload, rows.length, section]
   );
 
   const totalWeight = rows.reduce((acc, row) => acc + (asFinite(row.weight) ?? 0), 0);
@@ -274,6 +280,8 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <p>
             {section === "industry"
               ? "Industry-relative performance, cross-industry risk linkage, and concentration stress in one place."
+              : section === "sector"
+                ? "Sector-relative performance, cross-sector risk linkage, and concentration stress in one place."
               : "TradingEconomics macro forecasts grouped by table."}
           </p>
         </div>
@@ -290,10 +298,15 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <button className={`overview-period-btn ${section === "industry" ? "active" : ""}`} onClick={() => setSection("industry")}>
             Industry
           </button>
+          <button className={`overview-period-btn ${section === "sector" ? "active" : ""}`} onClick={() => setSection("sector")}>
+            Sector
+          </button>
         </div>
       </section>
 
-      {section === "industry" ? <DataWarningBanner warnings={warnings} title="Industry Read Warnings" /> : null}
+      {section === "industry" || section === "sector" ? (
+        <DataWarningBanner warnings={warnings} title={`${section === "sector" ? "Sector" : "Industry"} Read Warnings`} />
+      ) : null}
       {section === "macro" && (macroError || (macroPayload?.warnings ?? []).length > 0) ? (
         <DataWarningBanner
           warnings={[...(macroError ? [macroError] : []), ...(macroPayload?.warnings ?? [])]}
@@ -301,7 +314,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
         />
       ) : null}
 
-      {section === "industry" ? (
+      {section === "industry" || section === "sector" ? (
         <>
           <section className="overview-intel-shell market-controls-shell">
             <div className="market-controls-row">
@@ -375,7 +388,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           <section className="overview-main-shell market-main-shell">
             <div className="overview-widget-shell market-table-shell">
               <div className="overview-lens-header">
-                <h3 className="overview-lens-panel-title">Industry Metrics</h3>
+                <h3 className="overview-lens-panel-title">{section === "sector" ? "Sector" : "Industry"} Metrics</h3>
                 <span className="overview-lens-badge">Total Weight {formatPercent(totalWeight * 100, 1)}</span>
                 <span className="overview-lens-badge">Columns: {selectedPresetLabel} ({visibleColumns.length})</span>
               </div>
@@ -386,7 +399,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
                       {visibleColumns.map((column) => (
                         <th key={column.key} className={column.align === "right" ? "right" : undefined}>
                           <button className="market-sort-btn" onClick={() => onSort(column.key)}>
-                            {column.label}
+                            {section === "sector" && column.key === "industry" ? "Sector" : column.label}
                           </button>
                         </th>
                       ))}
@@ -413,7 +426,9 @@ export default function MarketOverviewPage({ dispatch }: Props) {
                     ))}
                     {!loading && rows.length === 0 ? (
                       <tr>
-                        <td colSpan={visibleColumns.length}>No industry analytics rows available for this portfolio/window.</td>
+                        <td colSpan={visibleColumns.length}>
+                          No {section === "sector" ? "sector" : "industry"} analytics rows available for this portfolio/window.
+                        </td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -428,7 +443,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
 
             <div className="overview-widget-shell market-treemap-shell">
               <div className="overview-lens-header">
-                <h3 className="overview-lens-panel-title">Industry Weight Map</h3>
+                <h3 className="overview-lens-panel-title">{section === "sector" ? "Sector" : "Industry"} Weight Map</h3>
               </div>
               <div style={{ width: "100%", height: 290 }}>
                 <ResponsiveContainer>
@@ -453,7 +468,9 @@ export default function MarketOverviewPage({ dispatch }: Props) {
           </section>
 
           <div className="overview-extended-note">
-            Industry matrix is derived from live portfolio holdings industry exposures for the selected interval/window.
+            {section === "sector"
+              ? "Sector matrix is derived from Yahoo Finance sector index history for the selected interval/window."
+              : "Industry matrix is derived from live portfolio holdings industry exposures for the selected interval/window."}
           </div>
         </>
       ) : (

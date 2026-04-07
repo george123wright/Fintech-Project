@@ -22,6 +22,20 @@ _price_panel_cache: dict[
     tuple[datetime, pd.DataFrame],
 ] = {}
 
+SECTOR_TICKER_MAP: dict[str, str] = {
+    "^YH101": "Materials",
+    "^YH308": "Communication Services",
+    "^YH102": "Consumer Discretionary",
+    "^YH205": "Consumer Staples",
+    "^YH309": "Energy",
+    "^YH103": "Financials",
+    "^YH206": "Healthcare",
+    "^YH310": "Industrials",
+    "^YH104": "Real Estate",
+    "^YH311": "Technology",
+    "^YH207": "Utilities",
+}
+
 
 def _normalize_tickers(tickers: list[str] | tuple[str, ...] | set[str]) -> list[str]:
     normalized = [str(t).strip().upper() for t in tickers if str(t).strip()]
@@ -150,6 +164,25 @@ def fetch_industry_price_panel(
     panel = _extract_close_frame(raw, normalized_tickers)
     _price_panel_cache[cache_key] = (now, panel.copy())
     return panel
+
+
+def fetch_sector_price_panel(
+    start: date | datetime | str,
+    end: date | datetime | str,
+    interval: str = "1d",
+    auto_adjust: bool = True,
+) -> pd.DataFrame:
+    """Download Yahoo sector index prices and rename columns to display sector labels."""
+    panel = fetch_industry_price_panel(
+        tickers=list(SECTOR_TICKER_MAP.keys()),
+        start=start,
+        end=end,
+        interval=interval,
+        auto_adjust=auto_adjust,
+    )
+    if panel.empty:
+        return panel
+    return panel.rename(columns=SECTOR_TICKER_MAP).dropna(axis=1, how="all")
 
 
 def map_tickers_to_display_industries(

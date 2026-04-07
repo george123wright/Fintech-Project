@@ -137,6 +137,7 @@ export async function getIndustryOverview(
     benchmark?: string;
     sortBy?: IndustryAnalyticsSortBy;
     sortOrder?: IndustryAnalyticsSortOrder;
+    scope?: "holdings" | "industry_map" | "sector_map";
   }
 ): Promise<IndustryOverviewResponse> {
   const suffix = buildIndustryOverviewQuery(options);
@@ -158,6 +159,7 @@ export function buildIndustryOverviewQuery(options?: {
   benchmark?: string;
   sortBy?: IndustryAnalyticsSortBy;
   sortOrder?: IndustryAnalyticsSortOrder;
+  scope?: "holdings" | "industry_map" | "sector_map";
 }): string {
   const query = new URLSearchParams();
   if (options?.window) {
@@ -184,7 +186,26 @@ export function buildIndustryOverviewQuery(options?: {
   if (options?.sortOrder) {
     query.set("sort_order", options.sortOrder);
   }
+  if (options?.scope) {
+    query.set("scope", options.scope);
+  }
   return query.toString() ? `?${query.toString()}` : "";
+}
+
+export async function getSectorOverview(
+  portfolioId: number,
+  options?: {
+    window?: IndustryAnalyticsWindow;
+    dateMode?: IndustryAnalyticsDateMode;
+    startDate?: string;
+    endDate?: string;
+    interval?: IndustryAnalyticsInterval;
+    benchmark?: string;
+    sortBy?: IndustryAnalyticsSortBy;
+    sortOrder?: IndustryAnalyticsSortOrder;
+  }
+): Promise<IndustryOverviewResponse> {
+  return getIndustryOverview(portfolioId, { ...options, scope: "sector_map" });
 }
 
 export async function getPrices(
