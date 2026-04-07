@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ChatMessageRenderer from "./chat/ChatMessageRenderer";
+import { postChatQuery } from "../api/client";
 import { usePortfolioData } from "../state/DataProvider";
+import ChatMessageRenderer from "./chat/ChatMessageRenderer";
 
 type ChatMessage = {
   id: string;
@@ -8,27 +9,27 @@ type ChatMessage = {
   text: string;
 };
 
-function buildAssistantReply(input: string, context: {
-  activePortfolioId: number | null;
-  status: string;
-  holdingsCount: number;
-  warningCount: number;
-}) {
-  const portfolio =
-    context.activePortfolioId == null ? "No active portfolio is selected yet." : `Portfolio #${context.activePortfolioId} is currently active.`;
+type ChatErrorState = {
+  message: string;
+  failedInput?: string;
+};
 
-  return [
-    `You asked: \"${input.trim()}\"`,
-    portfolio,
-    `Data status: ${context.status}. Holdings loaded: ${context.holdingsCount}.`,
-    context.warningCount > 0
-      ? `There are ${context.warningCount} data warning(s) in context.`
-      : "No data warnings are currently present.",
-  ].join("\n");
-}
+const MAX_HISTORY_TURNS = 8;
+const MAX_PERSISTED_MESSAGES = 24;
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), textarea:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getStorageKey(activePortfolioId: number | null) {
+  return `global-chat-messages:${activePortfolioId ?? "none"}`;
+}
+
+function toApiHistory(messages: ChatMessage[]) {
+  return messages.slice(-MAX_HISTORY_TURNS * 2).map((message) => ({
+    role: message.role,
+    content: message.text,
+  }));
+}
 
 export default function GlobalChatWidget() {
   const { state } = usePortfolioData();
@@ -36,7 +37,7 @@ export default function GlobalChatWidget() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [failedInput, setFailedInput] = useState<string | null>(null);
+  const [error, setError] = useState<ChatErrorState | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
@@ -50,6 +51,44 @@ export default function GlobalChatWidget() {
     }),
     [state.activePortfolioId, state.status, state.holdings.length, state.dataWarnings.length]
   );
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem(getStorageKey(state.activePortfolioId));
+    if (!raw) {
+      setMessages([]);
+      setError(null);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as ChatMessage[];
+      if (!Array.isArray(parsed)) {
+        setMessages([]);
+        return;
+      }
+      setMessages(
+        parsed
+          .filter(
+            (message): message is ChatMessage =>
+              typeof message?.id === "string" &&
+              (message?.role === "user" || message?.role === "assistant") &&
+              typeof message?.text === "string"
+          )
+          .slice(-MAX_PERSISTED_MESSAGES)
+      );
+      setError(null);
+    } catch {
+      setMessages([]);
+      setError(null);
+    }
+  }, [state.activePortfolioId]);
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      getStorageKey(state.activePortfolioId),
+      JSON.stringify(messages.slice(-MAX_PERSISTED_MESSAGES))
+    );
+  }, [messages, state.activePortfolioId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,42 +132,58 @@ export default function GlobalChatWidget() {
     const text = rawText.trim();
     if (!text || isLoading) return;
 
-    setFailedInput(null);
-    setMessages((current: ChatMessage[]) => [
-      ...current,
-      {
-        id: `user-${Date.now()}`,
-        role: "user",
-        text,
-      },
-    ]);
-    setInput("");
-    setIsLoading(true);
-
-    await new Promise((resolve) => setTimeout(resolve, 900));
-
-    const shouldFail = text.toLowerCase().includes("fail");
-    if (shouldFail) {
-      setIsLoading(false);
-      setFailedInput(text);
+    if (state.activePortfolioId == null) {
+      setError({ message: "Select a portfolio before sending a chat message." });
       return;
     }
 
-    const reply = buildAssistantReply(text, context);
-    setMessages((current: ChatMessage[]) => [
-      ...current,
-      {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        text: reply,
-      },
-    ]);
-    setIsLoading(false);
+    setError(null);
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      text,
+    };
+    setMessages((current) => [...current, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await postChatQuery({
+        portfolio_id: state.activePortfolioId,
+        question: text,
+        page_context: `status=${context.status}; holdings=${context.holdingsCount}; warnings=${context.warningCount}`,
+        conversation_history: toApiHistory(messages),
+      });
+
+      setMessages((current: ChatMessage[]) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: response.assistant_message,
+        },
+      ]);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error ? caughtError.message : "Failed to send message.";
+      setError({ message, failedInput: text });
+      setMessages((current: ChatMessage[]) =>
+        current.filter((messageItem) => messageItem.id !== userMessage.id)
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    setError(null);
+    sessionStorage.removeItem(getStorageKey(state.activePortfolioId));
   };
 
   const handleRetry = async () => {
-    if (!failedInput) return;
-    await sendMessage(failedInput);
+    if (!error?.failedInput) return;
+    await sendMessage(error.failedInput);
   };
 
   return (
@@ -146,9 +201,14 @@ export default function GlobalChatWidget() {
         <section ref={panelRef} className="chat-panel" role="dialog" aria-modal="false" aria-label="Global chat panel">
           <header className="chat-panel-header">
             <strong>Global Chat</strong>
-            <button type="button" className="chat-close-btn" onClick={() => setIsOpen(false)}>
-              Close
-            </button>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button type="button" className="chat-close-btn" onClick={clearChat} disabled={isLoading}>
+                Clear chat
+              </button>
+              <button type="button" className="chat-close-btn" onClick={() => setIsOpen(false)}>
+                Close
+              </button>
+            </div>
           </header>
 
           <div ref={messagesRef} className="chat-messages" aria-live="polite">
@@ -162,12 +222,14 @@ export default function GlobalChatWidget() {
               ))
             )}
             {isLoading ? <p className="chat-loading">Assistant is thinking…</p> : null}
-            {failedInput ? (
+            {error ? (
               <div className="chat-error-box">
-                <span>Message failed to send.</span>
-                <button type="button" onClick={() => void handleRetry()}>
-                  Retry
-                </button>
+                <span>{error.message}</span>
+                {error.failedInput ? (
+                  <button type="button" onClick={() => void handleRetry()}>
+                    Retry
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
