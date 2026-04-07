@@ -40,3 +40,26 @@ uvicorn app.main:app --reload --port 8000
 - `GET /api/v1/portfolios/{portfolio_id}/scenarios`
 - `GET /api/v1/portfolios/{portfolio_id}/scenarios/{run_id}`
 - `GET /api/v1/securities/{symbol}/scenario-sensitivity?portfolio_id={id}&factor=rates`
+
+## Environment variables
+
+### Core
+- `DATABASE_URL` (default: `sqlite:///./quick_balance.db`)
+- `DEFAULT_BENCHMARK` (default: `SPY`)
+- `DEFAULT_BASE_CCY` (default: `USD`)
+- `NIGHTLY_REFRESH_CRON` (default: `10 2 * * *`)
+- `RISK_FREE_RATE` (default: `0.02`)
+- `FRED_API_KEY` (optional)
+- `FRED_BASE_URL` (default: `https://api.stlouisfed.org/fred`)
+- `FRED_TIMEOUT_SEC` (default: `12`)
+- `FRONTEND_DIST_DIR` (default: `<repo>/dist`)
+
+### OpenRouter (chat)
+- `APP_ENV` or `ENV` (default: `dev`)
+- `OPENROUTER_API_KEY` (**required when `APP_ENV/ENV` is not a dev/test value**)
+- `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
+- `OPENROUTER_MODEL` (default: `openrouter/free`)
+- `OPENROUTER_TIMEOUT_SEC` (optional)
+- `OPENROUTER_MAX_TOKENS` (optional)
+
+> Validation behavior: the app still boots without `OPENROUTER_API_KEY`, but chat endpoints return a clear runtime `503` config error in non-dev environments.
