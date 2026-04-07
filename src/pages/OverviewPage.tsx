@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { buildDonutChart, buildFrontierChart } from "../charts/builders";
+import { buildDonutChart, buildFrontierChart, type FrontierAnalytics } from "../charts/builders";
 import DataWarningBanner from "../components/DataWarningBanner";
 import type { NavAction } from "../state/nav";
 import { usePortfolioData } from "../state/DataProvider";
@@ -178,6 +178,112 @@ function buildRiskCurve(distribution: Array<{ bucket: string; count: number; ton
       curve: Number(((prev + row.count * 2 + next) / 4).toFixed(2)),
     };
   });
+}
+
+function buildHistoricalFrontier(
+  holdings: Array<{ symbol: string; weight: number }>,
+  series: Array<{ symbol: string; points: Array<{ date: string; close: number }> }>
+): FrontierAnalytics | null {
+  const symbols = holdings.map((holding) => holding.symbol).filter((symbol) => symbol.length > 0);
+  const seriesBySymbol = new Map(series.map((item) => [item.symbol, item.points]));
+  const returnsBySymbol = new Map<string, Map<string, number>>();
+
+  for (const symbol of symbols) {
+    const points = seriesBySymbol.get(symbol) ?? [];
+    if (points.length < 40) continue;
+    const ordered = [...points].sort((left, right) => left.date.localeCompare(right.date));
+    const dailyReturns = new Map<string, number>();
+    for (let index = 1; index < ordered.length; index += 1) {
+      const prev = ordered[index - 1].close;
+      const curr = ordered[index].close;
+      if (!Number.isFinite(prev) || !Number.isFinite(curr) || prev <= 0) continue;
+      const value = curr / prev - 1;
+      if (Number.isFinite(value)) {
+        dailyReturns.set(ordered[index].date, value);
+      }
+    }
+    if (dailyReturns.size > 30) {
+      returnsBySymbol.set(symbol, dailyReturns);
+    }
+  }
+
+  const available = symbols.filter((symbol) => returnsBySymbol.has(symbol));
+  if (available.length < 2) return null;
+
+  const commonDates = [...(returnsBySymbol.get(available[0])?.keys() ?? [])].filter((date) =>
+    available.every((symbol) => returnsBySymbol.get(symbol)?.has(date))
+  );
+  if (commonDates.length < 30) return null;
+
+  const rows = commonDates.map((date) => available.map((symbol) => returnsBySymbol.get(symbol)?.get(date) ?? 0));
+  const observations = rows.length;
+  const dim = available.length;
+  const mean = Array.from({ length: dim }, (_, index) =>
+    (rows.reduce((acc, row) => acc + row[index], 0) / observations) * 252
+  );
+  const cov = Array.from({ length: dim }, () => Array.from({ length: dim }, () => 0));
+  for (let i = 0; i < dim; i += 1) {
+    for (let j = i; j < dim; j += 1) {
+      let sum = 0;
+      for (let rowIndex = 0; rowIndex < observations; rowIndex += 1) {
+        const left = rows[rowIndex][i] - mean[i] / 252;
+        const right = rows[rowIndex][j] - mean[j] / 252;
+        sum += left * right;
+      }
+      const value = (sum / Math.max(1, observations - 1)) * 252;
+      cov[i][j] = value;
+      cov[j][i] = value;
+    }
+  }
+
+  const evaluate = (weights: number[]) => {
+    const expectedReturn = weights.reduce((acc, weight, index) => acc + weight * mean[index], 0);
+    let variance = 0;
+    for (let i = 0; i < dim; i += 1) {
+      for (let j = 0; j < dim; j += 1) {
+        variance += weights[i] * cov[i][j] * weights[j];
+      }
+    }
+    return { risk: Math.sqrt(Math.max(0, variance)), expectedReturn };
+  };
+
+  const samples: Array<{ risk: number; expectedReturn: number }> = [];
+  for (let index = 0; index < dim; index += 1) {
+    const unit = Array.from({ length: dim }, (_, idx) => (idx === index ? 1 : 0));
+    samples.push(evaluate(unit));
+  }
+  for (let sampleIndex = 0; sampleIndex < 2500; sampleIndex += 1) {
+    const raw = Array.from({ length: dim }, () => Math.random());
+    const total = raw.reduce((acc, value) => acc + value, 0);
+    const weights = raw.map((value) => value / total);
+    samples.push(evaluate(weights));
+  }
+
+  const frontier = [...samples]
+    .sort((left, right) => left.risk - right.risk)
+    .reduce<Array<{ risk: number; expectedReturn: number }>>((acc, point) => {
+      const best = acc[acc.length - 1];
+      if (!best || point.expectedReturn > best.expectedReturn + 0.0005) {
+        acc.push(point);
+      }
+      return acc;
+    }, []);
+
+  const holdingsPoints: Record<string, { risk: number; expectedReturn: number }> = {};
+  for (let index = 0; index < dim; index += 1) {
+    holdingsPoints[available[index]] = evaluate(
+      Array.from({ length: dim }, (_, idx) => (idx === index ? 1 : 0))
+    );
+  }
+
+  const portfolioWeightsRaw = available.map((symbol) => {
+    const holding = holdings.find((item) => item.symbol === symbol);
+    return holding?.weight ?? 0;
+  });
+  const totalWeight = portfolioWeightsRaw.reduce((acc, value) => acc + value, 0);
+  const portfolio = totalWeight > 0 ? evaluate(portfolioWeightsRaw.map((value) => value / totalWeight)) : undefined;
+
+  return { frontier, holdings: holdingsPoints, portfolio };
 }
 
 function buildManualEntries(rows: ManualRow[]): ManualHoldingInput[] {
@@ -345,6 +451,7 @@ export default function OverviewPage({ dispatch }: Props) {
     runManualRefresh,
     recomputeValuations,
     fetchPortfolioNewsForActive,
+    fetchPricesForActive,
   } = usePortfolioData();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -360,6 +467,7 @@ export default function OverviewPage({ dispatch }: Props) {
   const [benchmarkWindow, setBenchmarkWindow] = useState<PeriodKey>(120);
   const [valueWindow, setValueWindow] = useState<PeriodKey>(120);
   const [riskSubtab, setRiskSubtab] = useState<RiskSubtabKey>("distribution");
+  const [frontierAnalytics, setFrontierAnalytics] = useState<FrontierAnalytics | null>(null);
 
   const holdings = dataState.holdings;
   const metrics = dataState.risk?.metrics ?? dataState.overview?.metrics;
@@ -402,10 +510,39 @@ export default function OverviewPage({ dispatch }: Props) {
           color: COLORS[idx % COLORS.length],
         })),
         metrics?.ann_vol,
-        metrics?.ann_return
+        metrics?.ann_return,
+        frontierAnalytics ?? undefined
       ),
-    [holdings, metrics?.ann_return, metrics?.ann_vol]
+    [frontierAnalytics, holdings, metrics?.ann_return, metrics?.ann_vol]
   );
+
+  useEffect(() => {
+    if (holdings.length < 2) {
+      setFrontierAnalytics(null);
+      return;
+    }
+
+    let isMounted = true;
+    const symbols = Array.from(new Set(holdings.map((holding) => holding.symbol).filter((symbol) => symbol.length > 0)));
+    void fetchPricesForActive(symbols, "1Y")
+      .then((response) => {
+        if (!isMounted) return;
+        setFrontierAnalytics(
+          buildHistoricalFrontier(
+            holdings.map((holding) => ({ symbol: holding.symbol, weight: holding.weight })),
+            response.series
+          )
+        );
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setFrontierAnalytics(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchPricesForActive, holdings]);
 
   const donut = useMemo(
     () => buildDonutChart(allocation, formatPrice(metrics?.portfolio_value ?? 0)),
