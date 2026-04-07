@@ -12,6 +12,7 @@ import yfinance as yf
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 0.35
 AggregationMethod = Literal["equal_weight_returns", "cap_weight_returns", "rebased_price_index"]
+IndustryMatrixSort = Literal["return", "vol", "sharpe", "alphabetical"]
 
 
 def _normalize_tickers(tickers: list[str] | tuple[str, ...] | set[str]) -> list[str]:
@@ -357,3 +358,109 @@ def compute_industry_return_metrics(
         out[str(industry)] = industry_metrics
 
     return out
+
+
+def build_industry_return_matrices(
+    returns_panel: pd.DataFrame,
+    sort_by: IndustryMatrixSort = "return",
+    risk_free_rate: float = 0.0,
+    periods_per_year: int = 252,
+) -> dict[str, dict[str, object]]:
+    """Build covariance/correlation matrices from an interval-aligned return panel.
+
+    Returns ordered labels, 2D values, and sort metadata so downstream clients can
+    re-order rows/columns without breaking matrix alignment.
+    """
+    if returns_panel.empty:
+        empty_sort = {
+            "sort_by": sort_by,
+            "direction": "asc" if sort_by == "alphabetical" else "desc",
+            "metric_values": {},
+            "available_sorts": ["return", "vol", "sharpe", "alphabetical"],
+        }
+        return {
+            "covariance_matrix": {"labels": [], "values": [], "sort_context": empty_sort},
+            "correlation_matrix": {"labels": [], "values": [], "sort_context": empty_sort},
+        }
+
+    panel = returns_panel.copy()
+    panel.index = pd.to_datetime(panel.index)
+    panel = panel.sort_index().apply(pd.to_numeric, errors="coerce")
+    panel = panel.dropna(axis=1, how="all")
+    if panel.empty:
+        return {
+            "covariance_matrix": {"labels": [], "values": [], "sort_context": {"sort_by": sort_by}},
+            "correlation_matrix": {"labels": [], "values": [], "sort_context": {"sort_by": sort_by}},
+        }
+
+    metric_values: dict[str, float | None] = {}
+    annual_rf = float(risk_free_rate)
+    for label in panel.columns:
+        series = panel[label].dropna()
+        if series.empty:
+            metric_values[str(label)] = None
+            continue
+        if sort_by == "alphabetical":
+            metric_values[str(label)] = None
+            continue
+        if sort_by == "return":
+            metric_values[str(label)] = float((1.0 + series).prod() - 1.0)
+            continue
+        if sort_by == "vol":
+            vol = float(series.std(ddof=1) * np.sqrt(periods_per_year)) if len(series) > 1 else None
+            metric_values[str(label)] = vol
+            continue
+
+        ann_return = None
+        if len(series) > 1:
+            growth = float((1.0 + series).prod())
+            if growth > 0:
+                ann_return = float(growth ** (periods_per_year / len(series)) - 1.0)
+        ann_vol = float(series.std(ddof=1) * np.sqrt(periods_per_year)) if len(series) > 1 else None
+        if ann_return is None or ann_vol is None or ann_vol <= 0:
+            metric_values[str(label)] = None
+        else:
+            metric_values[str(label)] = float((ann_return - annual_rf) / ann_vol)
+
+    labels = [str(col) for col in panel.columns]
+    if sort_by == "alphabetical":
+        ordered_labels = sorted(labels, key=lambda item: item.lower())
+        direction = "asc"
+    else:
+        ordered_labels = sorted(
+            labels,
+            key=lambda item: (
+                metric_values.get(item) is None,
+                -(metric_values.get(item) or 0.0),
+                item.lower(),
+            ),
+        )
+        direction = "desc"
+
+    cov = panel.cov(ddof=1).reindex(index=ordered_labels, columns=ordered_labels)
+    corr = panel.corr().reindex(index=ordered_labels, columns=ordered_labels)
+
+    def _matrix_values(df: pd.DataFrame) -> list[list[float | None]]:
+        return [
+            [None if pd.isna(v) else float(v) for v in row]
+            for row in df.to_numpy(dtype=float)
+        ]
+
+    sort_context = {
+        "sort_by": sort_by,
+        "direction": direction,
+        "metric_values": {label: metric_values.get(label) for label in ordered_labels},
+        "available_sorts": ["return", "vol", "sharpe", "alphabetical"],
+    }
+    return {
+        "covariance_matrix": {
+            "labels": ordered_labels,
+            "values": _matrix_values(cov),
+            "sort_context": sort_context,
+        },
+        "correlation_matrix": {
+            "labels": ordered_labels,
+            "values": _matrix_values(corr),
+            "sort_context": sort_context,
+        },
+    }
