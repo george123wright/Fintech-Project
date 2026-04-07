@@ -277,8 +277,17 @@ class IndustryMetricRowOut(BaseModel):
     industry: str
     weight: float = 0.0
     window_return: float | None = None
+    annualized_return: float | None = None
+    volatility_periodic: float | None = None
     volatility_annualized: float | None = None
+    skewness: float | None = None
+    kurtosis: float | None = None
+    var_95: float | None = None
+    cvar_95: float | None = None
     sharpe: float | None = None
+    sortino: float | None = None
+    upside_capture: float | None = None
+    downside_capture: float | None = None
     beta: float | None = None
     tracking_error: float | None = None
     information_ratio: float | None = None

@@ -621,8 +621,17 @@ export type IndustryMetricRow = {
   industry: string;
   weight: number;
   window_return: number | null;
+  annualized_return: number | null;
+  volatility_periodic: number | null;
   volatility_annualized: number | null;
+  skewness: number | null;
+  kurtosis: number | null;
+  var_95: number | null;
+  cvar_95: number | null;
   sharpe: number | null;
+  sortino: number | null;
+  upside_capture: number | null;
+  downside_capture: number | null;
   beta: number | null;
   tracking_error: number | null;
   information_ratio: number | null;

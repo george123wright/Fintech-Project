@@ -21,17 +21,18 @@ const DIVERGING_SCALE: ColorScale = [
 
 type Props = {
   rows: IndustryRow[];
-  covarianceMatrix: number[][];
-  correlationMatrix: number[][];
+  covarianceMatrix: Array<Array<number | null>>;
+  correlationMatrix: Array<Array<number | null>>;
 };
 
-export function reorderMatrix(matrix: number[][], orderedIndices: number[]) {
+export function reorderMatrix(matrix: Array<Array<number | null>>, orderedIndices: number[]) {
   return orderedIndices.map((rowIndex) => orderedIndices.map((colIndex) => matrix[rowIndex]?.[colIndex] ?? 0));
 }
 
 export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlationMatrix }: Props) {
   const [mode, setMode] = useState<MatrixMode>("covariance");
   const [sortOption, setSortOption] = useState<SortOption>("alphabetical");
+  const [fullScreenMode, setFullScreenMode] = useState<MatrixMode | null>(null);
 
   const orderedRows = useMemo(() => {
     const next = [...rows];
@@ -57,12 +58,33 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
     return reorderMatrix(source, orderedIndices);
   }, [correlationMatrix, covarianceMatrix, mode, orderedIndices]);
 
+  const fullScreenMatrix = useMemo(() => {
+    const resolvedMode = fullScreenMode ?? "covariance";
+    const source = resolvedMode === "correlation" ? correlationMatrix : covarianceMatrix;
+    return reorderMatrix(source, orderedIndices);
+  }, [correlationMatrix, covarianceMatrix, fullScreenMode, orderedIndices]);
+
   const covarianceExtrema = useMemo(() => {
-    const values = matrix.flat();
+    const values = matrix.flat().filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    if (values.length === 0) {
+      return { min: 0, max: 0, hasSignedRange: false };
+    }
     const min = Math.min(...values);
     const max = Math.max(...values);
     return { min, max, hasSignedRange: min < 0 && max > 0 };
   }, [matrix]);
+
+  const fullScreenExtrema = useMemo(() => {
+    const values = fullScreenMatrix
+      .flat()
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    if (values.length === 0) {
+      return { min: 0, max: 0, hasSignedRange: false };
+    }
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return { min, max, hasSignedRange: min < 0 && max > 0 };
+  }, [fullScreenMatrix]);
 
   const heatmapConfig =
     mode === "correlation"
@@ -93,6 +115,35 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
     ...heatmapConfig,
   };
 
+  const fullScreenHeatmapConfig =
+    fullScreenMode === "correlation"
+      ? {
+          colorscale: DIVERGING_SCALE,
+          zmin: -1,
+          zmax: 1,
+          zmid: 0,
+        }
+      : fullScreenExtrema.hasSignedRange
+        ? {
+            colorscale: DIVERGING_SCALE,
+            zmin: fullScreenExtrema.min,
+            zmax: fullScreenExtrema.max,
+            zmid: 0,
+          }
+        : {
+            colorscale: "Viridis" as const,
+            zmin: fullScreenExtrema.min,
+            zmax: fullScreenExtrema.max,
+          };
+
+  const fullScreenTrace: Data = {
+    z: fullScreenMatrix,
+    x: orderedLabels,
+    y: orderedLabels,
+    type: "heatmap",
+    ...fullScreenHeatmapConfig,
+  };
+
 
   return (
     <div className="overview-chart-shell">
@@ -111,6 +162,12 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
             <option value="sharpe">Sharpe</option>
             <option value="beta">Beta</option>
           </select>
+          <button className="btn-secondary" onClick={() => setFullScreenMode("covariance")}>
+            View Covariance Full Screen
+          </button>
+          <button className="btn-secondary" onClick={() => setFullScreenMode("correlation")}>
+            View Correlation Full Screen
+          </button>
         </div>
       </div>
 
@@ -126,6 +183,51 @@ export default function IndustryMatrixHeatmap({ rows, covarianceMatrix, correlat
         style={{ width: "100%", height: "320px" }}
         config={{ displayModeBar: false, responsive: true }}
       />
+
+      {fullScreenMode ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(13, 17, 23, 0.86)",
+            backdropFilter: "blur(2px)",
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <h3 style={{ margin: 0, color: "#f8f5ef" }}>
+              {fullScreenMode === "correlation" ? "Correlation Matrix" : "Covariance Matrix"} (Full Screen)
+            </h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#d4ccc4", fontSize: 12 }}>
+                Zoom with mouse wheel/trackpad or Plotly modebar tools.
+              </span>
+              <button className="btn-secondary" onClick={() => setFullScreenMode(null)}>
+                Exit Full Screen
+              </button>
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, background: "#f8f5ef", borderRadius: 8, padding: 8 }}>
+            <Plot
+              data={[fullScreenTrace]}
+              layout={{
+                autosize: true,
+                margin: { l: 120, r: 40, t: 30, b: 120 },
+                paper_bgcolor: "rgba(0,0,0,0)",
+                plot_bgcolor: "rgba(0,0,0,0)",
+                dragmode: "zoom",
+                font: { family: "Inter, sans-serif", size: 13, color: "#3b465f" },
+              }}
+              style={{ width: "100%", height: "100%" }}
+              config={{ displayModeBar: true, responsive: true, scrollZoom: true }}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
