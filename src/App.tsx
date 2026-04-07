@@ -3,6 +3,7 @@ import TopNav from "./components/TopNav";
 import ChartPage from "./pages/ChartPage";
 import LensPage from "./pages/LensPage";
 import MacroPage from "./pages/MacroPage";
+import MarketOverviewPage from "./pages/MarketOverviewPage";
 import AnalystHistoryPage from "./pages/AnalystHistoryPage";
 import OverviewPage from "./pages/OverviewPage";
 import PortfolioNewsPage from "./pages/PortfolioNewsPage";
@@ -22,6 +23,9 @@ export default function App() {
       break;
     case "overview":
       page = <OverviewPage dispatch={dispatch} />;
+      break;
+    case "market_overview":
+      page = <MarketOverviewPage dispatch={dispatch} />;
       break;
     case "watchlist":
       page = <WatchlistPage dispatch={dispatch} />;

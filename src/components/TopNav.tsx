@@ -10,6 +10,7 @@ type Props = {
 const LINKS: Array<{ label: string; page: Page }> = [
   { label: "Lens", page: "lens" },
   { label: "Overview", page: "overview" },
+  { label: "Market", page: "market_overview" },
   { label: "Watchlist", page: "watchlist" },
   { label: "Scenarios", page: "scenarios" },
   { label: "Reports", page: "reports" },
