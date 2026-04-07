@@ -2175,3 +2175,56 @@ hr {
   font-size: 12px;
   line-height: 1.4;
 }
+
+.market-row-select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(216, 197, 179, 0.35);
+}
+
+.market-insights-shell {
+  padding: 14px 16px;
+}
+
+.market-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.market-insight-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(8, 12, 17, 0.45);
+  padding: 10px;
+  min-height: 100%;
+}
+
+.market-insight-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.market-insight-block ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.market-insight-block p {
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+}

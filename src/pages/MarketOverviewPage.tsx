@@ -45,6 +45,127 @@ type MarketColumn = {
   formatter?: (row: IndustryMetricRow) => string;
 };
 
+type InsightCompany = { symbol: string; name: string | null; rating: string | null; marketWeight: number };
+type InsightIndustry = { key: string; name: string; symbol: string; marketWeight: number };
+type InsightOverview = {
+  companiesCount: number;
+  marketCap: number;
+  description: string;
+  marketWeight: number;
+  employeeCount: number;
+  industriesCount?: number | null;
+};
+type MarketInsight = {
+  key: string;
+  label: string;
+  overview: InsightOverview;
+  topCompanies: InsightCompany[];
+  topEtfs?: Record<string, string>;
+  industries?: InsightIndustry[];
+};
+
+const TECHNOLOGY_SECTOR_INSIGHT: MarketInsight = {
+  key: "technology",
+  label: "Technology",
+  overview: {
+    companiesCount: 828,
+    marketCap: 21590578298880,
+    description:
+      "Companies engaged in the design, development, and support of computer operating systems and applications. This sector also includes companies that make computer equipment, data storage products, networking products, semiconductors, and components. Companies in this sector include Apple, Microsoft, and IBM.",
+    industriesCount: 12,
+    marketWeight: 0.2879349,
+    employeeCount: 7962626,
+  },
+  topEtfs: {
+    VGT: "Vanguard Information Tech ETF",
+    XLK: "State Street Technology Select",
+    SMH: "VanEck Semiconductor ETF",
+    SOXX: "iShares PHLX SOX Semiconductor",
+    IYW: "iShares U.S. Technology ETF",
+    FTEC: "Fidelity MSCI Information Technology",
+    SOXL: "Direxion Daily Semiconductor Bull 3X",
+    IGV: "iShares Expanded Tech-Software Sector ETF",
+    CIBR: "First Trust NASDAQ Cybersecurity ETF",
+    BAI: "iShares A.I. Innovation and Tech Active ETF",
+  },
+  industries: [
+    { key: "semiconductors", name: "Semiconductors", symbol: "^YH31130020", marketWeight: 0.364284 },
+    { key: "software-infrastructure", name: "Software - Infrastructure", symbol: "^YH31110030", marketWeight: 0.211556 },
+    { key: "consumer-electronics", name: "Consumer Electronics", symbol: "^YH31120030", marketWeight: 0.170525 },
+    { key: "software-application", name: "Software - Application", symbol: "^YH31110020", marketWeight: 0.077823 },
+    { key: "semiconductor-equipment-materials", name: "Semiconductor Equipment & Materials", symbol: "^YH31130010", marketWeight: 0.043108 },
+    { key: "communication-equipment", name: "Communication Equipment", symbol: "^YH31120010", marketWeight: 0.032105 },
+    { key: "computer-hardware", name: "Computer Hardware", symbol: "^YH31120020", marketWeight: 0.031286 },
+    { key: "information-technology-services", name: "Information Technology Services", symbol: "^YH31110010", marketWeight: 0.028673 },
+    { key: "electronic-components", name: "Electronic Components", symbol: "^YH31120040", marketWeight: 0.024404 },
+    { key: "scientific-technical-instruments", name: "Scientific & Technical Instruments", symbol: "^YH31120060", marketWeight: 0.012199 },
+    { key: "solar", name: "Solar", symbol: "^YH31130030", marketWeight: 0.002534 },
+    { key: "electronics-computer-distribution", name: "Electronics & Computer Distribution", symbol: "^YH31120050", marketWeight: 0.001504 },
+  ],
+  topCompanies: [
+    { symbol: "NVDA", name: "NVIDIA Corporation", rating: "Strong Buy", marketWeight: 0.200443 },
+    { symbol: "AAPL", name: "Apple Inc.", rating: "Buy", marketWeight: 0.17253 },
+    { symbol: "MSFT", name: "Microsoft Corporation", rating: "Strong Buy", marketWeight: 0.128127 },
+    { symbol: "AVGO", name: "Broadcom Inc.", rating: "Strong Buy", marketWeight: 0.073322 },
+    { symbol: "MU", name: "Micron Technology, Inc.", rating: "Strong Buy", marketWeight: 0.019717 },
+    { symbol: "ORCL", name: "Oracle Corporation", rating: "Buy", marketWeight: 0.019067 },
+    { symbol: "AMD", name: "Advanced Micro Devices, Inc.", rating: "Buy", marketWeight: 0.016725 },
+    { symbol: "PLTR", name: "Palantir Technologies Inc.", rating: "Buy", marketWeight: 0.01662 },
+    { symbol: "CSCO", name: "Cisco Systems, Inc.", rating: "Buy", marketWeight: 0.014761 },
+    { symbol: "LRCX", name: "Lam Research Corporation", rating: "Buy", marketWeight: 0.013048 },
+  ],
+};
+
+const SOFTWARE_INFRASTRUCTURE_INSIGHT: MarketInsight = {
+  key: "software-infrastructure",
+  label: "Software - Infrastructure",
+  overview: {
+    companiesCount: 198,
+    marketCap: 4567610687488,
+    description:
+      "Companies that develop, design, support, and provide system software and services, including operating systems, networking software and devices, web portal services, cloud storage, and related services.",
+    marketWeight: 0.21155573,
+    employeeCount: 831861,
+  },
+  topCompanies: [
+    { symbol: "MSFT", name: "Microsoft Corporation", rating: "Strong Buy", marketWeight: 0.606599 },
+    { symbol: "ORCL", name: "Oracle Corporation", rating: "Buy", marketWeight: 0.090269 },
+    { symbol: "PLTR", name: "Palantir Technologies Inc.", rating: "Buy", marketWeight: 0.078684 },
+    { symbol: "PANW", name: "Palo Alto Networks, Inc.", rating: "Buy", marketWeight: 0.030388 },
+    { symbol: "CRWD", name: "CrowdStrike Holdings, Inc.", rating: "Buy", marketWeight: 0.023531 },
+    { symbol: "SNPS", name: "Synopsys, Inc.", rating: "Buy", marketWeight: 0.01671 },
+    { symbol: "NET", name: "Cloudflare, Inc.", rating: "Buy", marketWeight: 0.01669 },
+    { symbol: "FTNT", name: "Fortinet, Inc.", rating: "Hold", marketWeight: 0.013649 },
+    { symbol: "CRWV", name: "CoreWeave, Inc.", rating: "Buy", marketWeight: 0.009823 },
+    { symbol: "XYZ", name: "Block, Inc.", rating: "Buy", marketWeight: 0.007989 },
+  ],
+};
+
+function normalizeMarketKey(value: string): string {
+  return value.trim().toLowerCase().replace(/&/g, "and").replace(/\s+/g, "-");
+}
+
+function formatLargeInteger(value: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatMarketCap(value: number): string {
+  if (value >= 1_000_000_000_000) return `$${(value / 1_000_000_000_000).toFixed(2)}T`;
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
+  return `$${formatLargeInteger(value)}`;
+}
+
+function findInsight(section: MarketSection, key: string | null): MarketInsight | null {
+  if (section === "sector" && normalizeMarketKey(key ?? "") === "technology") return TECHNOLOGY_SECTOR_INSIGHT;
+  if (section === "industry") {
+    const normalized = normalizeMarketKey(key ?? "");
+    if (normalized === "software---infrastructure" || normalized === "software-infrastructure") {
+      return SOFTWARE_INFRASTRUCTURE_INSIGHT;
+    }
+  }
+  return null;
+}
+
 function asFinite(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -122,6 +243,7 @@ export function getVisibleMarketColumns(preset: ColumnPreset): MarketColumn[] {
 export default function MarketOverviewPage({ dispatch }: Props) {
   const { state: dataState } = usePortfolioData();
   const [section, setSection] = useState<MarketSection>("industry");
+  const [selectedNode, setSelectedNode] = useState<string | null>("Software - Infrastructure");
   const [window, setWindow] = useState<IndustryAnalyticsWindow>("1Y");
   const [dateMode, setDateMode] = useState<IndustryAnalyticsDateMode>("preset");
   const [startDate, setStartDate] = useState("");
@@ -138,6 +260,11 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   const [macroLoading, setMacroLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [macroError, setMacroError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (section === "industry") setSelectedNode("Software - Infrastructure");
+    if (section === "sector") setSelectedNode("Technology");
+  }, [section]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,6 +372,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   );
 
   const totalWeight = rows.reduce((acc, row) => acc + (asFinite(row.weight) ?? 0), 0);
+  const selectedInsight = useMemo(() => findInsight(section, selectedNode), [section, selectedNode]);
 
   const matrixRows = useMemo(
     () =>
@@ -419,7 +547,11 @@ export default function MarketOverviewPage({ dispatch }: Props) {
                                   : undefined
                             }
                           >
-                            {column.formatter ? column.formatter(row) : row.industry}
+                            {column.key === "industry" ? (
+                              <button className="market-row-select" onClick={() => setSelectedNode(row.industry)}>
+                                {column.formatter ? column.formatter(row) : row.industry}
+                              </button>
+                            ) : column.formatter ? column.formatter(row) : row.industry}
                           </td>
                         ))}
                       </tr>
@@ -457,6 +589,64 @@ export default function MarketOverviewPage({ dispatch }: Props) {
                 </ResponsiveContainer>
               </div>
             </div>
+          </section>
+
+          <section className="overview-widget-shell market-insights-shell">
+            <div className="overview-lens-header">
+              <h3 className="overview-lens-panel-title">{section === "sector" ? "Sector" : "Industry"} Drilldown</h3>
+              <span className="overview-lens-badge">Selected: {selectedNode ?? "None"}</span>
+            </div>
+            {selectedInsight ? (
+              <div className="market-insights-grid">
+                <div className="market-insight-block">
+                  <div className="market-insight-title">Overview</div>
+                  <p>{selectedInsight.overview.description}</p>
+                  <ul>
+                    <li>Companies: {formatLargeInteger(selectedInsight.overview.companiesCount)}</li>
+                    <li>Employees: {formatLargeInteger(selectedInsight.overview.employeeCount)}</li>
+                    <li>Market Cap: {formatMarketCap(selectedInsight.overview.marketCap)}</li>
+                    <li>Market Weight: {formatPercent(selectedInsight.overview.marketWeight * 100, 2)}</li>
+                    {selectedInsight.overview.industriesCount != null ? <li>Industry Count: {selectedInsight.overview.industriesCount}</li> : null}
+                  </ul>
+                </div>
+
+                {selectedInsight.topEtfs ? (
+                  <div className="market-insight-block">
+                    <div className="market-insight-title">Top ETFs</div>
+                    <ul>
+                      {Object.entries(selectedInsight.topEtfs).map(([symbol, name]) => (
+                        <li key={symbol}><strong>{symbol}</strong> · {name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {selectedInsight.industries ? (
+                  <div className="market-insight-block">
+                    <div className="market-insight-title">Industry Mix</div>
+                    <ul>
+                      {selectedInsight.industries.map((item) => (
+                        <li key={item.key}>{item.name} ({item.symbol}) · {formatPercent(item.marketWeight * 100, 2)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="market-insight-block">
+                  <div className="market-insight-title">Top Companies</div>
+                  <ul>
+                    {selectedInsight.topCompanies.map((item) => (
+                      <li key={item.symbol}><strong>{item.symbol}</strong> · {item.name ?? "N/A"} · {item.rating ?? "N/A"} · {formatPercent(item.marketWeight * 100, 2)}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <p className="market-core-note">
+                No static yfinance insight has been added yet for “{selectedNode ?? "this selection"}”.
+                Current embedded datasets: Technology sector and Software - Infrastructure industry.
+              </p>
+            )}
           </section>
 
           <section className="overview-main-shell market-heatmap-grid">
