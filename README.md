@@ -151,3 +151,16 @@ npm run build
 - REST endpoints for portfolio CRUD, upload, refresh, overview, risk analytics, and price ranges
 - Frontend data provider (`src/state/DataProvider.tsx`) and API client (`src/api/client.ts`)
 - Plotly + Recharts visualizations powered by API data in Overview/Chart/Stock pages
+
+## Environment variables
+
+Backend environment variables are configured in `backend/.env` (copy from `backend/.env.example`).
+
+### OpenRouter (backend only)
+- `APP_ENV` / `ENV` (default: `dev`)
+- `OPENROUTER_API_KEY` (required in non-dev environments for chat endpoints)
+- `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
+- `OPENROUTER_MODEL` (default: `openrouter/free`)
+- Optional tuning: `OPENROUTER_TIMEOUT_SEC`, `OPENROUTER_MAX_TOKENS`
+
+Security note: keep `OPENROUTER_API_KEY` server-side only; never expose it in frontend code or Vite client env vars.

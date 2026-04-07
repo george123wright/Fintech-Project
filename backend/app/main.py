@@ -15,10 +15,19 @@ from app.jobs.scheduler import start_scheduler
 scheduler = None
 
 
+def _chat_config_error() -> str | None:
+    if settings.is_dev or settings.openrouter_api_key:
+        return None
+    return (
+        "OPENROUTER_API_KEY is required for chat endpoints when APP_ENV/ENV is not a dev environment."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global scheduler
     Base.metadata.create_all(bind=engine)
+    app.state.chat_config_error = _chat_config_error()
     scheduler = start_scheduler(SessionLocal, settings.nightly_refresh_cron)
     try:
         yield
