@@ -11,12 +11,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "katex": "^0.16.11",
     "lucide-react": "^0.468.0",
     "plotly.js": "^2.35.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
     "react-plotly.js": "^2.6.0",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "rehype-katex": "^7.0.0",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@types/plotly.js": "^2.35.3",

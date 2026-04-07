@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ChatMessageRenderer from "./chat/ChatMessageRenderer";
 import { usePortfolioData } from "../state/DataProvider";
 
 type ChatMessage = {
@@ -156,7 +157,7 @@ export default function GlobalChatWidget() {
             ) : (
               messages.map((message) => (
                 <article key={message.id} className={`chat-message chat-message-${message.role}`}>
-                  <div>{message.text}</div>
+                  {message.role === "assistant" ? <ChatMessageRenderer content={message.text} /> : <div>{message.text}</div>}
                 </article>
               ))
             )}
