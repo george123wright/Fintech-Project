@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-
+from app.secrets import OPENROUTER_API_KEY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -19,7 +19,7 @@ class Settings:
     fred_api_key: str | None = os.getenv("FRED_API_KEY")
     fred_base_url: str = os.getenv("FRED_BASE_URL", "https://api.stlouisfed.org/fred")
     fred_timeout_sec: float = float(os.getenv("FRED_TIMEOUT_SEC", "12"))
-    openrouter_api_key: str | None = os.getenv("OPENROUTER_API_KEY")
+    openrouter_api_key: str = OPENROUTER_API_KEY
     openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     openrouter_model: str = os.getenv("OPENROUTER_MODEL", "openrouter/free")
     openrouter_timeout_sec: float | None = (
