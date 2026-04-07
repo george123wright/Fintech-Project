@@ -946,6 +946,38 @@ export default function OverviewPage({ dispatch }: Props) {
     { label: "Max DD", value: fmtPercentOrNA(metrics?.max_drawdown), sub: "Last 12 months", tone: "warning" as const, variant: "compact" as const },
   ];
 
+  const weightedValuationSummary = useMemo(() => {
+    const valuationOverview = dataState.valuationOverview;
+    const holdingsBySymbol = new Map(holdings.map((holding) => [holding.symbol.toUpperCase(), holding.weight]));
+    const rows = valuationOverview?.results ?? [];
+
+    const weightedFromRows = (
+      selector: (row: (typeof rows)[number]) => number | null | undefined
+    ): number | null => {
+      let weighted = 0;
+      let coveredWeight = 0;
+      for (const row of rows) {
+        const value = selector(row);
+        if (value == null || !Number.isFinite(value)) continue;
+        const weight = holdingsBySymbol.get(row.symbol.toUpperCase()) ?? 0;
+        if (!Number.isFinite(weight) || weight <= 0) continue;
+        weighted += weight * value;
+        coveredWeight += weight;
+      }
+      if (coveredWeight <= 0) return null;
+      return weighted;
+    };
+
+    return {
+      analystTargetReturn:
+        valuationOverview?.weighted_analyst_upside ?? weightedFromRows((row) => row.analyst_upside),
+      dcfReturn: valuationOverview?.weighted_dcf_upside ?? weightedFromRows((row) => row.dcf_upside),
+      riReturn: valuationOverview?.weighted_ri_upside ?? weightedFromRows((row) => row.ri_upside),
+      ddmReturn: valuationOverview?.weighted_ddm_upside ?? weightedFromRows((row) => row.ddm_upside),
+      coverageRatio: valuationOverview?.coverage_ratio ?? null,
+    };
+  }, [dataState.valuationOverview, holdings]);
+
   return (
     <div className="overview-prototype-wrap">
       <div className="overview-page-title">Your Portfolio Dashboard</div>
@@ -954,6 +986,40 @@ export default function OverviewPage({ dispatch }: Props) {
         {statsStrip.map((item) => (
           <OverviewStat key={item.label} label={item.label} value={item.value} sub={item.sub} tone={item.tone} variant={item.variant} />
         ))}
+      </section>
+
+      <section className="surface" style={{ padding: 14, marginBottom: 14 }}>
+        <div className="kicker" style={{ marginBottom: 10 }}>Portfolio Valuation (Weighted Returns)</div>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+          {[
+            ["Analyst Target Return", weightedValuationSummary.analystTargetReturn, "From analyst target price vs current price"],
+            ["DCF Weighted Return", weightedValuationSummary.dcfReturn, "Portfolio-weighted DCF upside"],
+            ["RI Weighted Return", weightedValuationSummary.riReturn, "Portfolio-weighted residual income upside"],
+            ["DDM Weighted Return", weightedValuationSummary.ddmReturn, "Portfolio-weighted dividend discount upside"],
+          ].map(([label, value, note]) => (
+            <div key={String(label)} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 5 }}>{label}</div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color:
+                    typeof value === "number" && value > 0
+                      ? "var(--green)"
+                      : typeof value === "number" && value < 0
+                        ? "var(--red)"
+                        : "var(--text)",
+                }}
+              >
+                {typeof value === "number" ? formatPercent(value * 100, 1) : "N/A"}
+              </div>
+              <div style={{ marginTop: 4, fontSize: 10, color: "var(--muted)" }}>{note}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)" }}>
+          Coverage: {weightedValuationSummary.coverageRatio == null ? "N/A" : formatPercent(weightedValuationSummary.coverageRatio * 100)}
+        </div>
       </section>
 
       <section className="overview-ticker-strip">
