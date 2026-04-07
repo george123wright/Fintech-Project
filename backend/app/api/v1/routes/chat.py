@@ -59,6 +59,13 @@ def _session_id(request: Request) -> str:
     )
 
 
+def _assistant_preview(text: str, *, max_chars: int = 240) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_chars:
+        return collapsed
+    return f"{collapsed[:max_chars].rstrip()}…"
+
+
 async def require_chat_config(request: Request) -> None:
     chat_config_error = getattr(request.app.state, "chat_config_error", None)
     if chat_config_error:
@@ -272,6 +279,8 @@ def chat_query_route(
     if analytics is not None:
         analytics.inc("chat.success")
 
+    assistant_message = (result.get("content") or "").strip()
+
     log_chat_event(
         "completed",
         request_id=req_id,
@@ -281,11 +290,12 @@ def chat_query_route(
         model=result.get("model"),
         token_usage=usage if isinstance(usage, dict) else None,
         finish_reason=finish_reason,
+        assistant_message_preview=_assistant_preview(assistant_message),
         analytics_snapshot=analytics.snapshot() if analytics is not None else None,
     )
 
     return ChatQueryResponse(
-        assistant_message=(result.get("content") or "").strip(),
+        assistant_message=assistant_message,
         context_summary=(
             f"portfolio_as_of={portfolio_context.get('as_of_date')}"
             if portfolio_context.get("as_of_date")
