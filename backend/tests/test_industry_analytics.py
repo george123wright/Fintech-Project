@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
+from app.api.v1.routes import portfolios
+from app.db import Base, SessionLocal, engine
+from app.models import HoldingsPosition, HoldingsSnapshot
+from app.schemas.analytics import IndustryAnalyticsParams
+from app.services.portfolio import ensure_default_portfolio
 from app.services import industry_analytics as ia
 
 
@@ -285,3 +292,61 @@ def test_build_industry_return_matrices_alphabetical_sort() -> None:
     out = ia.build_industry_return_matrices(returns, sort_by="alphabetical")
     assert out["covariance_matrix"]["labels"] == ["Energy", "Utilities"]
     assert out["covariance_matrix"]["sort_context"]["direction"] == "asc"
+
+
+def test_industry_analytics_route_industry_map_scope_covers_resolved_universe(monkeypatch) -> None:
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        portfolio = ensure_default_portfolio(db)
+        snapshot = HoldingsSnapshot(portfolio_id=portfolio.id, as_of_date=date(2026, 4, 1))
+        db.add(snapshot)
+        db.flush()
+        db.add(
+            HoldingsPosition(
+                snapshot_id=snapshot.id,
+                symbol="AAPL",
+                market_value=1000.0,
+                currency="USD",
+                weight=1.0,
+            )
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            portfolios,
+            "resolve_industry_ticker_map",
+            lambda _slugs: {"XLK": "software-infrastructure", "XLE": "oil-gas-integrated"},
+        )
+        monkeypatch.setattr(
+            portfolios,
+            "fetch_industry_price_panel",
+            lambda **_kwargs: pd.DataFrame(
+                {
+                    "XLK": [100.0, 101.0, 102.0, 103.0],
+                    "XLE": [90.0, 92.0, 91.0, 93.0],
+                },
+                index=pd.date_range("2026-03-01", periods=4, freq="D"),
+            ),
+        )
+        monkeypatch.setattr(
+            portfolios,
+            "get_symbols_price_frame",
+            lambda *_args, **_kwargs: pd.DataFrame(
+                {"SPY": [500.0, 502.0, 501.0, 503.0]},
+                index=pd.date_range("2026-03-01", periods=4, freq="D"),
+            ),
+        )
+
+        out = portfolios.industry_analytics_route(
+            portfolio_id=portfolio.id,
+            params=IndustryAnalyticsParams(),
+            scope="industry_map",
+            db=db,
+        )
+
+    assert out.scope == "industry_map"
+    assert out.resolved_ticker_count == 2
+    assert out.mapped_industry_count == 2
+    assert len(out.unresolved_slugs) > 0
+    assert {row.industry for row in out.rows} == {"Software - Infrastructure", "Oil & Gas Integrated"}
+    assert all(row.weight == 0.0 for row in out.rows)

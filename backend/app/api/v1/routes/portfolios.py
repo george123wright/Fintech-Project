@@ -58,7 +58,11 @@ from app.services.industry_analytics import (
     aggregate_industry_panel,
     build_industry_return_matrices,
     compute_industry_return_metrics,
+    fetch_industry_price_panel,
+    map_tickers_to_display_industries,
+    resolve_industry_ticker_map,
 )
+from app.services.industry_map import INDUSTRY_MAP, slug_to_display
 from app.services.insights import load_latest_fundamentals
 from app.services.narratives import narrative_payload, latest_narrative_snapshot
 from app.services.portfolio import (
@@ -452,6 +456,7 @@ def extended_analytics_route(portfolio_id: int, db: Session = Depends(get_db)) -
 def industry_analytics_route(
     portfolio_id: int,
     params: Annotated[IndustryAnalyticsParams, Depends(_industry_analytics_params)],
+    scope: Literal["holdings", "industry_map"] = Query("industry_map"),
     db: Session = Depends(get_db),
 ) -> IndustryOverviewResponse:
     portfolio = get_portfolio_or_404(db, portfolio_id)
@@ -477,34 +482,70 @@ def industry_analytics_route(
     start_date = end_date - timedelta(days=max(window_days * 2, 31))
 
     symbol_weights = {str(p.symbol).upper(): float(p.weight) for p in positions if p.symbol}
-    symbols = list(symbol_weights.keys())
-    prices = get_symbols_price_frame(db, symbols, start_date, end_date)
-    if prices.empty:
-        raise HTTPException(status_code=404, detail="No price history found for portfolio symbols")
-
-    if params.interval == "weekly":
-        prices = prices.resample("W-FRI").last().dropna(how="all")
-    elif params.interval == "monthly":
-        prices = prices.resample("ME").last().dropna(how="all")
-
-    fundamentals = load_latest_fundamentals(db, symbols)
-    ticker_to_industry = {
-        symbol: str((getattr(fundamentals.get(symbol), "industry", None) or "Unknown industry")).strip() or "Unknown industry"
-        for symbol in symbols
-    }
+    returns_panel = pd.DataFrame(dtype=float)
     industry_weights: dict[str, float] = {}
-    for symbol, weight in symbol_weights.items():
-        industry = ticker_to_industry.get(symbol, "Unknown industry")
-        industry_weights[industry] = industry_weights.get(industry, 0.0) + float(weight)
+    resolved_ticker_count = 0
+    unresolved_slugs: list[str] = []
+    mapped_industry_count = 0
+    if scope == "industry_map":
+        slugs = [entry.slug for entry in INDUSTRY_MAP]
+        ticker_to_slug = resolve_industry_ticker_map(slugs)
+        resolved_ticker_count = len(ticker_to_slug)
+        unresolved_slugs = [slug for slug in slugs if slug not in set(ticker_to_slug.values())]
+        mapped_prices = fetch_industry_price_panel(
+            tickers=list(ticker_to_slug.keys()),
+            start=start_date,
+            end=end_date,
+        )
+        if params.interval == "weekly":
+            mapped_prices = mapped_prices.resample("W-FRI").last().dropna(how="all")
+        elif params.interval == "monthly":
+            mapped_prices = mapped_prices.resample("ME").last().dropna(how="all")
+        display_prices = map_tickers_to_display_industries(
+            mapped_prices,
+            ticker_to_slug=ticker_to_slug,
+            slug_to_display=slug_to_display(),
+        )
+        normalized_display_prices = display_prices.copy()
+        normalized_display_prices.index = pd.to_datetime(normalized_display_prices.index)
+        normalized_display_prices = normalized_display_prices.sort_index()
+        normalized_display_prices = normalized_display_prices.apply(pd.to_numeric, errors="coerce").ffill()
+        returns_panel = normalized_display_prices.pct_change(fill_method=None)
+        returns_panel = returns_panel.T.groupby(level=0).mean().T
+        returns_panel = returns_panel.dropna(axis=0, how="all").dropna(axis=1, how="all")
+        if returns_panel.empty:
+            raise HTTPException(status_code=404, detail="Unable to compute industry return panel")
+        mapped_industry_count = len(list(returns_panel.columns))
+    else:
+        symbols = list(symbol_weights.keys())
+        prices = get_symbols_price_frame(db, symbols, start_date, end_date)
+        if prices.empty:
+            raise HTTPException(status_code=404, detail="No price history found for portfolio symbols")
 
-    returns_panel, _aggregation_meta = aggregate_industry_panel(
-        prices,
-        ticker_to_industry=ticker_to_industry,
-        method="cap_weight_returns",
-        market_caps=symbol_weights,
-    )
-    if returns_panel.empty:
-        raise HTTPException(status_code=404, detail="Unable to compute industry return panel")
+        if params.interval == "weekly":
+            prices = prices.resample("W-FRI").last().dropna(how="all")
+        elif params.interval == "monthly":
+            prices = prices.resample("ME").last().dropna(how="all")
+
+        fundamentals = load_latest_fundamentals(db, symbols)
+        ticker_to_industry = {
+            symbol: str((getattr(fundamentals.get(symbol), "industry", None) or "Unknown industry")).strip() or "Unknown industry"
+            for symbol in symbols
+        }
+        for symbol, weight in symbol_weights.items():
+            industry = ticker_to_industry.get(symbol, "Unknown industry")
+            industry_weights[industry] = industry_weights.get(industry, 0.0) + float(weight)
+
+        returns_panel, _aggregation_meta = aggregate_industry_panel(
+            prices,
+            ticker_to_industry=ticker_to_industry,
+            method="cap_weight_returns",
+            market_caps=symbol_weights,
+        )
+        if returns_panel.empty:
+            raise HTTPException(status_code=404, detail="Unable to compute industry return panel")
+        mapped_industry_count = len(list(returns_panel.columns))
+        resolved_ticker_count = len(symbols)
 
     periods_per_year = 252 if params.interval == "daily" else (52 if params.interval == "weekly" else 12)
 
@@ -588,6 +629,10 @@ def industry_analytics_route(
         portfolio_id=portfolio_id,
         snapshot_id=snapshot.id,
         as_of_date=snapshot.as_of_date,
+        scope=scope,
+        mapped_industry_count=mapped_industry_count,
+        resolved_ticker_count=resolved_ticker_count,
+        unresolved_slugs=unresolved_slugs,
         window=params.window,
         interval=params.interval,
         benchmark=benchmark_symbol,
