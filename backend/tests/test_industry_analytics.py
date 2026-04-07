@@ -137,3 +137,50 @@ def test_clean_returns_panel_generalized() -> None:
     # A should be +10% each step after sorting and pct_change.
     assert round(cleaned["A"].iloc[0], 4) == 0.1
     assert round(cleaned["A"].iloc[1], 4) == 0.1
+
+def test_compute_industry_return_metrics_with_benchmark() -> None:
+    idx = pd.date_range("2026-01-01", periods=8, freq="D")
+    industry_returns = pd.DataFrame(
+        {
+            "Software": [0.01, -0.005, 0.008, 0.002, -0.003, 0.007, 0.001, 0.004],
+            "Energy": [0.004, 0.006, -0.002, 0.003, 0.005, -0.004, 0.002, 0.001],
+        },
+        index=idx,
+    )
+    benchmark = pd.Series([0.008, -0.004, 0.006, 0.001, -0.002, 0.005, 0.0, 0.003], index=idx)
+
+    out = ia.compute_industry_return_metrics(industry_returns, benchmark_returns=benchmark, risk_free_rate=0.02)
+
+    assert set(out.keys()) == {"Software", "Energy"}
+    software = out["Software"]
+    assert software["window_return"] is not None
+    assert software["volatility_periodic"] is not None
+    assert software["volatility_annualized"] is not None
+    assert software["skewness"] is not None
+    assert software["kurtosis"] is not None
+    assert software["var_95"] is not None
+    assert software["cvar_95"] is not None
+    assert software["sharpe"] is not None
+    assert software["sortino"] is not None
+    assert software["upside_capture"] is not None
+    assert software["downside_capture"] is not None
+    assert software["beta"] is not None
+    assert software["max_drawdown"] is not None
+    assert software["hit_rate"] is not None
+    assert software["tracking_error"] is not None
+    assert software["information_ratio"] is not None
+
+
+def test_compute_industry_return_metrics_without_benchmark() -> None:
+    idx = pd.date_range("2026-01-01", periods=5, freq="D")
+    industry_returns = pd.DataFrame({"Utilities": [0.01, 0.0, -0.01, 0.005, 0.002]}, index=idx)
+
+    out = ia.compute_industry_return_metrics(industry_returns)
+
+    utilities = out["Utilities"]
+    assert utilities["window_return"] is not None
+    assert utilities["upside_capture"] is None
+    assert utilities["downside_capture"] is None
+    assert utilities["beta"] is None
+    assert utilities["tracking_error"] is None
+    assert utilities["information_ratio"] is None

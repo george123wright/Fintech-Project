@@ -4,6 +4,7 @@ from datetime import date, datetime
 from time import sleep
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -220,3 +221,139 @@ def clean_returns_panel(prices: pd.DataFrame) -> pd.DataFrame:
     returns = returns.replace([float("inf"), float("-inf")], pd.NA)
     returns = returns.dropna(axis=0, how="all").dropna(axis=1, how="all")
     return returns.astype(float)
+
+
+def compute_industry_return_metrics(
+    returns_panel: pd.DataFrame,
+    benchmark_returns: pd.Series | None = None,
+    risk_free_rate: float = 0.0,
+    periods_per_year: int = 252,
+    var_confidence: float = 0.95,
+) -> dict[str, dict[str, float | None]]:
+    """Compute per-industry risk/return metrics using portfolio-metric conventions."""
+    if returns_panel.empty:
+        return {}
+
+    panel = returns_panel.copy()
+    panel.index = pd.to_datetime(panel.index)
+    panel = panel.sort_index().apply(pd.to_numeric, errors="coerce")
+    panel = panel.dropna(axis=1, how="all")
+
+    bench = None
+    if benchmark_returns is not None and not benchmark_returns.empty:
+        bench = pd.to_numeric(benchmark_returns, errors="coerce")
+        bench.index = pd.to_datetime(bench.index)
+        bench = bench.sort_index().dropna()
+
+    level = float(np.clip(var_confidence, 0.01, 0.999))
+    tail_level = 1.0 - level
+    rf_period = float((1.0 + max(-0.999, risk_free_rate)) ** (1.0 / periods_per_year) - 1.0)
+
+    def _ann_return(ret: pd.Series) -> float | None:
+        cleaned = ret.dropna()
+        if len(cleaned) <= 1:
+            return None
+        growth = float((1.0 + cleaned).prod())
+        if growth <= 0:
+            return -1.0
+        return float(growth ** (periods_per_year / len(cleaned)) - 1.0)
+
+    def _capture_ratio(merged: pd.DataFrame, positive: bool) -> float | None:
+        bucket = merged[merged["b"] > 0] if positive else merged[merged["b"] < 0]
+        if bucket.empty:
+            return None
+        bench_mean = float(bucket["b"].mean())
+        if abs(bench_mean) <= 1e-12:
+            return None
+        return float(bucket["p"].mean() / bench_mean)
+
+    out: dict[str, dict[str, float | None]] = {}
+    for industry in panel.columns:
+        ret = panel[industry].dropna()
+        if ret.empty:
+            out[str(industry)] = {}
+            continue
+
+        periodic_vol = float(ret.std(ddof=1)) if len(ret) > 1 else None
+        ann_vol = float(periodic_vol * np.sqrt(periods_per_year)) if periodic_vol is not None else None
+        ann_return = _ann_return(ret)
+
+        downside = np.minimum(0.0, ret.to_numpy(dtype=float) - rf_period)
+        downside_dev = float(np.sqrt(np.mean(np.square(downside))) * np.sqrt(periods_per_year)) if len(ret) else None
+
+        sharpe = None
+        if ann_return is not None and ann_vol and ann_vol > 0:
+            sharpe = float((ann_return - risk_free_rate) / ann_vol)
+
+        sortino = None
+        if ann_return is not None and downside_dev and downside_dev > 0:
+            sortino = float((ann_return - risk_free_rate) / downside_dev)
+
+        q = float(ret.quantile(tail_level)) if len(ret) > 1 else None
+        var = float(-q) if q is not None else None
+        cvar = None
+        if q is not None:
+            tail = ret[ret <= q]
+            cvar = float(-tail.mean()) if not tail.empty else 0.0
+
+        growth = (1.0 + ret).cumprod()
+        running_max = growth.cummax()
+        dd = growth / running_max - 1.0
+        max_dd = float(dd.min()) if len(dd) else None
+
+        industry_metrics: dict[str, float | None] = {
+            "window_return": float((1.0 + ret).prod() - 1.0),
+            "volatility_periodic": periodic_vol,
+            "volatility_annualized": ann_vol,
+            "skewness": float(ret.skew()) if len(ret) > 2 else None,
+            "kurtosis": float(ret.kurtosis() + 3.0) if len(ret) > 3 else None,
+            "var_95": var,
+            "cvar_95": cvar,
+            "sharpe": sharpe,
+            "sortino": sortino,
+            "max_drawdown": max_dd,
+            "hit_rate": float((ret > 0).mean()),
+        }
+
+        if bench is not None:
+            merged = pd.concat([ret.rename("p"), bench.rename("b")], axis=1).dropna()
+            if len(merged) >= 2:
+                bench_var = float(merged["b"].var(ddof=1))
+                beta = float(merged["p"].cov(merged["b"]) / bench_var) if bench_var > 0 else None
+                active = merged["p"] - merged["b"]
+                te = float(active.std(ddof=1)) if len(active) > 1 else None
+                info_ratio = float(active.mean() / te * np.sqrt(periods_per_year)) if te and te > 0 else None
+
+                industry_metrics.update(
+                    {
+                        "upside_capture": _capture_ratio(merged, positive=True),
+                        "downside_capture": _capture_ratio(merged, positive=False),
+                        "beta": beta,
+                        "tracking_error": te,
+                        "information_ratio": info_ratio,
+                    }
+                )
+            else:
+                industry_metrics.update(
+                    {
+                        "upside_capture": None,
+                        "downside_capture": None,
+                        "beta": None,
+                        "tracking_error": None,
+                        "information_ratio": None,
+                    }
+                )
+        else:
+            industry_metrics.update(
+                {
+                    "upside_capture": None,
+                    "downside_capture": None,
+                    "beta": None,
+                    "tracking_error": None,
+                    "information_ratio": None,
+                }
+            )
+
+        out[str(industry)] = industry_metrics
+
+    return out
