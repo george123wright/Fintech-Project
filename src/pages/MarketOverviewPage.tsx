@@ -419,15 +419,30 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       </div>
 
       <section className="overview-intel-shell market-section-shell">
-        <div className="market-pill-row">
-          <button className={`overview-period-btn ${section === "macro" ? "active" : ""}`} onClick={() => setSection("macro")}>
+        <div className="market-subsection-tabs" role="tablist" aria-label="Market subsections">
+          <button
+            className={`market-subsection-tab ${section === "macro" ? "active" : ""}`}
+            onClick={() => setSection("macro")}
+            role="tab"
+            aria-selected={section === "macro"}
+          >
             Macro
           </button>
-          <button className={`overview-period-btn ${section === "industry" ? "active" : ""}`} onClick={() => setSection("industry")}>
-            Industry
-          </button>
-          <button className={`overview-period-btn ${section === "sector" ? "active" : ""}`} onClick={() => setSection("sector")}>
+          <button
+            className={`market-subsection-tab ${section === "sector" ? "active" : ""}`}
+            onClick={() => setSection("sector")}
+            role="tab"
+            aria-selected={section === "sector"}
+          >
             Sector
+          </button>
+          <button
+            className={`market-subsection-tab ${section === "industry" ? "active" : ""}`}
+            onClick={() => setSection("industry")}
+            role="tab"
+            aria-selected={section === "industry"}
+          >
+            Industry
           </button>
         </div>
       </section>

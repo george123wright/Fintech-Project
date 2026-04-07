@@ -1189,7 +1189,37 @@ input {
 }
 
 .market-section-shell {
-  padding: 10px 18px;
+  padding: 0 18px;
+}
+
+.market-subsection-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  row-gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.market-subsection-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 2px;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.market-subsection-tab:hover,
+.market-subsection-tab.active {
+  color: var(--accent);
+}
+
+.market-subsection-tab.active {
+  border-bottom-color: var(--accent);
 }
 
 .market-controls-shell {
