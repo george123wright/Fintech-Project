@@ -15,6 +15,21 @@ from app.models import HoldingsPosition, SecurityAnalystSnapshot, SecurityFundam
 from app.services.pricing import get_symbols_price_frame
 
 TRADING_DAYS = 252
+INTERVAL_TO_TRADING_PERIODS: dict[str, int] = {
+    "daily": 252,
+    "weekly": 52,
+    "monthly": 12,
+}
+WINDOW_PRESET_TO_DAYS: dict[str, int] = {
+    "1d": 1,
+    "1w": 7,
+    "1m": 31,
+    "3m": 93,
+    "1y": 366,
+    "3y": 365 * 3 + 1,
+    "5y": 365 * 5 + 2,
+    "10y": 365 * 10 + 3,
+}
 
 FACTOR_PROXY_SYMBOLS: dict[str, list[str]] = {
     "market": ["SPY"],
@@ -74,7 +89,7 @@ def _as_python(value: Any) -> Any:
     return value
 
 
-def _annualized_return(returns: pd.Series) -> float | None:
+def _annualized_return(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float | None:
     cleaned = returns.dropna()
     n = len(cleaned)
     if n <= 1:
@@ -82,17 +97,17 @@ def _annualized_return(returns: pd.Series) -> float | None:
     growth = float((1.0 + cleaned).prod())
     if growth <= 0:
         return -1.0
-    return float(growth ** (TRADING_DAYS / n) - 1.0)
+    return float(growth ** (periods_per_year / n) - 1.0)
 
 
-def _annualized_vol(returns: pd.Series) -> float | None:
+def _annualized_vol(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float | None:
     cleaned = returns.dropna()
     if len(cleaned) <= 1:
         return None
     sigma = float(cleaned.std(ddof=1))
     if not np.isfinite(sigma):
         return None
-    return float(sigma * np.sqrt(TRADING_DAYS))
+    return float(sigma * np.sqrt(periods_per_year))
 
 
 def _drawdown_series(returns: pd.Series) -> pd.Series:
@@ -270,7 +285,11 @@ def _capture_metrics(port_returns: pd.Series, bench_returns: pd.Series) -> dict[
     }
 
 
-def _ols_factor_exposure(target_returns: pd.Series, factor_returns: pd.DataFrame) -> dict[str, float | None]:
+def _ols_factor_exposure(
+    target_returns: pd.Series,
+    factor_returns: pd.DataFrame,
+    periods_per_year: int,
+) -> dict[str, float | None]:
     merged = pd.concat([target_returns.rename("target"), factor_returns], axis=1).dropna()
     if merged.empty:
         return {}
@@ -289,7 +308,7 @@ def _ols_factor_exposure(target_returns: pd.Series, factor_returns: pd.DataFrame
     alpha_daily = float(coeff[0])
     out: dict[str, float | None] = {
         "alpha_daily": alpha_daily,
-        "alpha_annual": float((1.0 + alpha_daily) ** TRADING_DAYS - 1.0),
+        "alpha_annual": float((1.0 + alpha_daily) ** periods_per_year - 1.0),
         "r2": None,
     }
 
@@ -373,6 +392,7 @@ def _compute_metric_pack(
     price_series: pd.Series,
     benchmark_returns: pd.Series,
     risk_free_rate: float,
+    periods_per_year: int,
     benchmark_vol_ann: float | None,
     portfolio_value: float | None,
 ) -> dict[str, Any]:
@@ -412,12 +432,12 @@ def _compute_metric_pack(
             "technicals": _technicals(price_series),
         }
 
-    ann_return = _annualized_return(cleaned)
-    ann_vol = _annualized_vol(cleaned)
-    rf_per_day = float((1.0 + max(-0.999, risk_free_rate)) ** (1.0 / TRADING_DAYS) - 1.0)
+    ann_return = _annualized_return(cleaned, periods_per_year=periods_per_year)
+    ann_vol = _annualized_vol(cleaned, periods_per_year=periods_per_year)
+    rf_per_day = float((1.0 + max(-0.999, risk_free_rate)) ** (1.0 / periods_per_year) - 1.0)
 
     downside = np.minimum(0.0, cleaned.to_numpy(dtype=float) - rf_per_day)
-    downside_dev = float(np.sqrt(np.mean(np.square(downside))) * np.sqrt(TRADING_DAYS))
+    downside_dev = float(np.sqrt(np.mean(np.square(downside))) * np.sqrt(periods_per_year))
 
     sharpe = None
     if ann_return is not None and ann_vol is not None and ann_vol > 0:
@@ -446,13 +466,13 @@ def _compute_metric_pack(
         active_diff = active["p"] - active["b"]
         tracking_error = float(active_diff.std(ddof=1))
         if tracking_error > 0:
-            information_ratio = float(active_diff.mean() / tracking_error * np.sqrt(TRADING_DAYS))
+            information_ratio = float(active_diff.mean() / tracking_error * np.sqrt(periods_per_year))
 
         bench_var = float(active["b"].var(ddof=1))
         if bench_var > 0:
             beta = float(active["p"].cov(active["b"]) / bench_var)
 
-        bench_ann = _annualized_return(active["b"])
+        bench_ann = _annualized_return(active["b"], periods_per_year=periods_per_year)
         if ann_return is not None and beta is not None and bench_ann is not None:
             historical_alpha = float(ann_return - (risk_free_rate + beta * (bench_ann - risk_free_rate)))
 
@@ -546,6 +566,8 @@ def _build_factor_exposures(
     end_date: date,
     portfolio_returns: pd.Series,
     symbol_returns: pd.DataFrame,
+    interval_base: str,
+    periods_per_year: int,
     warnings: list[str],
 ) -> dict[str, Any]:
     if db is None:
@@ -567,6 +589,7 @@ def _build_factor_exposures(
             "stocks": {},
         }
 
+    factor_prices = _resample_frame(factor_prices, interval_base)
     factor_rets = factor_prices.pct_change().dropna(how="all").fillna(0.0)
 
     built: dict[str, pd.Series] = {}
@@ -611,10 +634,10 @@ def _build_factor_exposures(
 
     factor_df = pd.DataFrame(built).dropna(how="all")
 
-    portfolio_exposure = _ols_factor_exposure(portfolio_returns, factor_df)
+    portfolio_exposure = _ols_factor_exposure(portfolio_returns, factor_df, periods_per_year)
     stock_exposure: dict[str, dict[str, float | None]] = {}
     for symbol in symbol_returns.columns:
-        stock_exposure[symbol] = _ols_factor_exposure(symbol_returns[symbol], factor_df)
+        stock_exposure[symbol] = _ols_factor_exposure(symbol_returns[symbol], factor_df, periods_per_year)
 
     return {
         "model": "proxy_regression",
@@ -632,6 +655,7 @@ def _build_macro_exposures(
     portfolio_returns: pd.Series,
     symbol_returns: pd.DataFrame,
     benchmark_returns: pd.Series | None,
+    interval_base: str,
     warnings: list[str],
 ) -> dict[str, Any]:
     if db is None:
@@ -655,6 +679,7 @@ def _build_macro_exposures(
             "stocks": {},
         }
 
+    macro_prices = _resample_frame(macro_prices, interval_base)
     macro_returns = macro_prices.pct_change().dropna(how="all").fillna(0.0)
 
     portfolio: dict[str, dict[str, float | None]] = {}
@@ -1060,6 +1085,52 @@ def _pairwise_correlations(symbol_returns: pd.DataFrame) -> list[dict[str, Any]]
     return pairs[:20]
 
 
+def _resolve_window(
+    *,
+    as_of: date,
+    preset: str,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date, date, str]:
+    normalized = str(preset).strip().lower()
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            raise ValueError("Both custom start and end dates are required together.")
+        if start_date > end_date:
+            raise ValueError("Custom start date must be <= end date.")
+        return start_date, end_date, "custom"
+
+    if normalized not in WINDOW_PRESET_TO_DAYS:
+        normalized = "5y"
+    end = as_of
+    start = end - pd.Timedelta(days=WINDOW_PRESET_TO_DAYS[normalized])
+    return pd.Timestamp(start).date(), end, normalized
+
+
+def _resample_prices(price_frame: pd.DataFrame, benchmark_prices: pd.Series, interval_base: str) -> tuple[pd.DataFrame, pd.Series]:
+    freq_map = {
+        "daily": None,
+        "weekly": "W-FRI",
+        "monthly": "ME",
+    }
+    interval = str(interval_base).strip().lower()
+    resample_freq = freq_map.get(interval)
+    cleaned_prices = price_frame.sort_index()
+    cleaned_benchmark = benchmark_prices.sort_index()
+    if resample_freq is None:
+        return cleaned_prices, cleaned_benchmark
+    return (
+        cleaned_prices.resample(resample_freq).last(),
+        cleaned_benchmark.resample(resample_freq).last(),
+    )
+
+
+def _resample_frame(frame: pd.DataFrame, interval_base: str) -> pd.DataFrame:
+    series = pd.Series(np.arange(len(frame.index), dtype=float), index=frame.index)
+    resampled, _ = _resample_prices(frame, series, interval_base)
+    return resampled
+
+
 def compute_extended_metrics(
     *,
     holdings: list[HoldingsPosition],
@@ -1070,9 +1141,20 @@ def compute_extended_metrics(
     db: Session | None = None,
     as_of_date: date | None = None,
     include_live_extras: bool = True,
+    window_preset: str = "5y",
+    interval_base: str = "daily",
+    custom_start_date: date | None = None,
+    custom_end_date: date | None = None,
 ) -> ExtendedMetricResult:
     warnings: list[str] = []
     as_of = as_of_date or date.today()
+    interval = str(interval_base).strip().lower()
+    periods_per_year = INTERVAL_TO_TRADING_PERIODS.get(interval, TRADING_DAYS)
+    requested_window = "CUSTOM" if custom_start_date is not None or custom_end_date is not None else str(window_preset).strip().upper()
+    if interval not in INTERVAL_TO_TRADING_PERIODS:
+        warnings.append(f"extended_metrics: unsupported_interval_{interval_base}, defaulted_to_daily")
+        interval = "daily"
+        periods_per_year = TRADING_DAYS
 
     portfolio_value = float(sum(max(0.0, float(h.market_value)) for h in holdings))
 
@@ -1082,7 +1164,7 @@ def compute_extended_metrics(
             metrics={
                 "status": "no_data",
                 "as_of_date": as_of.isoformat(),
-                "window": "5Y",
+                "window": requested_window,
                 "benchmark_symbol": benchmark_symbol.upper(),
                 "portfolio": {},
                 "stocks": {},
@@ -1098,7 +1180,7 @@ def compute_extended_metrics(
             metrics={
                 "status": "no_data",
                 "as_of_date": as_of.isoformat(),
-                "window": "5Y",
+                "window": requested_window,
                 "benchmark_symbol": benchmark_symbol.upper(),
                 "portfolio": {},
                 "stocks": {},
@@ -1106,8 +1188,28 @@ def compute_extended_metrics(
             warnings=warnings,
         )
 
+    try:
+        window_start, window_end, resolved_window = _resolve_window(
+            as_of=as_of,
+            preset=window_preset,
+            start_date=custom_start_date,
+            end_date=custom_end_date,
+        )
+    except ValueError as exc:
+        warnings.append(f"extended_metrics: {exc}")
+        window_start, window_end, resolved_window = _resolve_window(as_of=as_of, preset="5y", start_date=None, end_date=None)
+
     symbol_prices = price_frame[symbols].copy().sort_index()
     symbol_prices.index = pd.to_datetime(symbol_prices.index)
+    window_mask = (symbol_prices.index >= pd.Timestamp(window_start)) & (symbol_prices.index <= pd.Timestamp(window_end))
+    symbol_prices = symbol_prices.loc[window_mask]
+    benchmark_series = pd.to_numeric(benchmark_prices, errors="coerce").dropna().sort_index()
+    benchmark_series.index = pd.to_datetime(benchmark_series.index)
+    benchmark_series = benchmark_series.loc[
+        (benchmark_series.index >= pd.Timestamp(window_start)) & (benchmark_series.index <= pd.Timestamp(window_end))
+    ]
+
+    symbol_prices, benchmark_series = _resample_prices(symbol_prices, benchmark_series, interval)
     symbol_returns = symbol_prices.pct_change().dropna(how="all").fillna(0.0)
 
     if symbol_returns.empty:
@@ -1116,7 +1218,7 @@ def compute_extended_metrics(
             metrics={
                 "status": "no_data",
                 "as_of_date": as_of.isoformat(),
-                "window": "5Y",
+                "window": requested_window,
                 "benchmark_symbol": benchmark_symbol.upper(),
                 "portfolio": {},
                 "stocks": {},
@@ -1131,8 +1233,6 @@ def compute_extended_metrics(
         w = np.ones_like(w) / len(w)
 
     portfolio_returns = pd.Series(symbol_returns.to_numpy() @ w, index=symbol_returns.index, name="portfolio")
-    benchmark_series = pd.to_numeric(benchmark_prices, errors="coerce").dropna().sort_index()
-    benchmark_series.index = pd.to_datetime(benchmark_series.index)
     benchmark_returns = benchmark_series.pct_change().dropna()
 
     aligned = pd.concat([portfolio_returns.rename("p"), benchmark_returns.rename("b")], axis=1).dropna()
@@ -1142,7 +1242,7 @@ def compute_extended_metrics(
     else:
         warnings.append("extended_metrics: benchmark_alignment_short")
 
-    benchmark_vol_ann = _annualized_vol(benchmark_returns)
+    benchmark_vol_ann = _annualized_vol(benchmark_returns, periods_per_year=periods_per_year)
 
     portfolio_price_index = 100.0 * (1.0 + portfolio_returns.fillna(0.0)).cumprod()
 
@@ -1151,6 +1251,7 @@ def compute_extended_metrics(
         price_series=portfolio_price_index,
         benchmark_returns=benchmark_returns,
         risk_free_rate=risk_free_rate,
+        periods_per_year=periods_per_year,
         benchmark_vol_ann=benchmark_vol_ann,
         portfolio_value=portfolio_value,
     )
@@ -1164,6 +1265,7 @@ def compute_extended_metrics(
             price_series=symbol_prices[symbol],
             benchmark_returns=benchmark_returns,
             risk_free_rate=risk_free_rate,
+            periods_per_year=periods_per_year,
             benchmark_vol_ann=benchmark_vol_ann,
             portfolio_value=float(weights_map[symbol] * portfolio_value),
         )
@@ -1177,6 +1279,8 @@ def compute_extended_metrics(
         end_date=end_date,
         portfolio_returns=portfolio_returns,
         symbol_returns=symbol_returns[symbols],
+        interval_base=interval,
+        periods_per_year=periods_per_year,
         warnings=warnings,
     )
 
@@ -1187,6 +1291,7 @@ def compute_extended_metrics(
         portfolio_returns=portfolio_returns,
         symbol_returns=symbol_returns[symbols],
         benchmark_returns=benchmark_returns,
+        interval_base=interval,
         warnings=warnings,
     )
 
@@ -1213,7 +1318,8 @@ def compute_extended_metrics(
     payload = {
         "status": "ok",
         "as_of_date": as_of.isoformat(),
-        "window": "5Y",
+        "window": resolved_window.upper(),
+        "interval_base": interval,
         "benchmark_symbol": benchmark_symbol.upper(),
         "portfolio": {
             **portfolio_pack,
