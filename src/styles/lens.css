@@ -1291,8 +1291,22 @@ input {
   background: linear-gradient(to left, rgba(8, 12, 17, 0.85), rgba(8, 12, 17, 0));
 }
 
+.market-overview-sector .market-table-scroll::after {
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0));
+}
+
 .market-table {
   min-width: 1120px;
+}
+
+.market-overview-sector .market-table-scroll {
+  background: #ffffff;
+}
+
+.market-overview-sector .market-table th,
+.market-overview-sector .market-table td {
+  background: #ffffff;
+  color: #162033;
 }
 
 .market-table th:first-child,
@@ -1301,6 +1315,11 @@ input {
   left: 0;
   z-index: 1;
   background: var(--surface);
+}
+
+.market-overview-sector .market-table th:first-child,
+.market-overview-sector .market-table td:first-child {
+  background: #ffffff;
 }
 
 .market-table th:first-child {
@@ -1322,6 +1341,26 @@ input {
   padding: 0;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+.market-macro-subsection {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.market-macro-subsection-header {
+  display: inline-flex;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 172, 239, 0.5);
+  background: rgba(154, 172, 239, 0.14);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
 }
 
 .market-treemap-shell {
