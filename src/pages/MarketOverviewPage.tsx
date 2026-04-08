@@ -255,7 +255,6 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   const [columnPreset, setColumnPreset] = useState<ColumnPreset>("all");
   const [payload, setPayload] = useState<IndustryOverviewResponse | null>(null);
   const [macroPayload, setMacroPayload] = useState<MacroForecastResponse | null>(null);
-  const [activeMacroTable, setActiveMacroTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [macroLoading, setMacroLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -335,9 +334,6 @@ export default function MarketOverviewPage({ dispatch }: Props) {
       .then((response) => {
         if (!cancelled) {
           setMacroPayload(response);
-          if (!activeMacroTable && response.tables.length > 0) {
-            setActiveMacroTable(response.tables[0].key);
-          }
         }
       })
       .catch((err) => {
@@ -355,7 +351,7 @@ export default function MarketOverviewPage({ dispatch }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [activeMacroTable, dataState.activePortfolioId, section]);
+  }, [dataState.activePortfolioId, section]);
 
   const rows = useMemo(() => {
     const base = payload?.rows ?? [];
@@ -373,6 +369,10 @@ export default function MarketOverviewPage({ dispatch }: Props) {
 
   const totalWeight = rows.reduce((acc, row) => acc + (asFinite(row.weight) ?? 0), 0);
   const selectedInsight = useMemo(() => findInsight(section, selectedNode), [section, selectedNode]);
+  const selectedAnalyticsRow = useMemo(
+    () => rows.find((row) => normalizeMarketKey(row.industry) === normalizeMarketKey(selectedNode ?? "")) ?? null,
+    [rows, selectedNode]
+  );
 
   const matrixRows = useMemo(
     () =>
@@ -395,13 +395,8 @@ export default function MarketOverviewPage({ dispatch }: Props) {
   const visibleColumns = useMemo(() => getVisibleMarketColumns(columnPreset), [columnPreset]);
   const isCoreOnly = columnPreset === "core";
   const selectedPresetLabel = PRESET_LABELS[columnPreset];
-  const selectedMacroTable = useMemo(
-    () => macroPayload?.tables.find((table) => table.key === activeMacroTable) ?? macroPayload?.tables[0] ?? null,
-    [activeMacroTable, macroPayload?.tables]
-  );
-
   return (
-    <div className="overview-prototype-wrap market-overview-wrap">
+    <div className={`overview-prototype-wrap market-overview-wrap ${section === "sector" ? "market-overview-sector" : ""}`}>
       <div className="overview-page-title">
         <div>
           <h1>Market Overview</h1>
@@ -656,6 +651,39 @@ export default function MarketOverviewPage({ dispatch }: Props) {
                   </ul>
                 </div>
               </div>
+            ) : section === "sector" && selectedAnalyticsRow ? (
+              <div className="market-insights-grid">
+                <div className="market-insight-block">
+                  <div className="market-insight-title">Overview</div>
+                  <p>
+                    Live sector analytics for <strong>{selectedAnalyticsRow.industry}</strong> from the selected window and interval.
+                  </p>
+                  <ul>
+                    <li>Weight: {formatPercent(selectedAnalyticsRow.weight * 100, 2)}</li>
+                    <li>Return: {selectedAnalyticsRow.window_return == null ? "N/A" : formatPercent(selectedAnalyticsRow.window_return * 100, 2)}</li>
+                    <li>Volatility: {selectedAnalyticsRow.volatility_annualized == null ? "N/A" : formatPercent(selectedAnalyticsRow.volatility_annualized * 100, 2)}</li>
+                    <li>Sharpe: {fmtNum(selectedAnalyticsRow.sharpe)}</li>
+                    <li>Beta: {fmtNum(selectedAnalyticsRow.beta)}</li>
+                  </ul>
+                </div>
+                <div className="market-insight-block">
+                  <div className="market-insight-title">Risk Metrics</div>
+                  <ul>
+                    <li>Skew: {fmtNum(selectedAnalyticsRow.skewness)}</li>
+                    <li>Kurtosis: {fmtNum(selectedAnalyticsRow.kurtosis)}</li>
+                    <li>VaR 95%: {selectedAnalyticsRow.var_95 == null ? "N/A" : formatPercent(selectedAnalyticsRow.var_95 * 100, 2)}</li>
+                    <li>ES 95%: {selectedAnalyticsRow.cvar_95 == null ? "N/A" : formatPercent(selectedAnalyticsRow.cvar_95 * 100, 2)}</li>
+                  </ul>
+                </div>
+                <div className="market-insight-block">
+                  <div className="market-insight-title">Relative Metrics</div>
+                  <ul>
+                    <li>Upside Capture: {fmtNum(selectedAnalyticsRow.upside_capture)}</li>
+                    <li>Tracking Error: {fmtNum(selectedAnalyticsRow.tracking_error)}</li>
+                    <li>Information Ratio: {fmtNum(selectedAnalyticsRow.information_ratio)}</li>
+                  </ul>
+                </div>
+              </div>
             ) : (
               <p className="market-core-note">
                 No static yfinance insight has been added yet for “{selectedNode ?? "this selection"}”.
@@ -684,37 +712,33 @@ export default function MarketOverviewPage({ dispatch }: Props) {
             <div className="overview-lens-header">
               <h3 className="overview-lens-panel-title">TradingEconomics Forecast Tables</h3>
             </div>
-            <div className="market-pill-row" style={{ marginBottom: 12 }}>
-              {(macroPayload?.tables ?? []).map((table) => (
-                <button
-                  key={table.key}
-                  className={`overview-period-btn ${selectedMacroTable?.key === table.key ? "active" : ""}`}
-                  onClick={() => setActiveMacroTable(table.key)}
-                >
-                  {table.key.replaceAll("_", " ")}
-                </button>
-              ))}
-            </div>
-            {selectedMacroTable ? (
-              <div className="market-table-scroll">
-                <table className="table market-table">
-                  <thead>
-                    <tr>
-                      {selectedMacroTable.columns.map((column) => (
-                        <th key={`${selectedMacroTable.key}-${column}`}>{column}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedMacroTable.rows.map((row, index) => (
-                      <tr key={`${selectedMacroTable.key}-${index}`}>
-                        {selectedMacroTable.columns.map((column) => (
-                          <td key={`${selectedMacroTable.key}-${index}-${column}`}>{row[column] || "—"}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {(macroPayload?.tables ?? []).length > 0 ? (
+              <div className="overview-lens-stack">
+                {(macroPayload?.tables ?? []).map((table) => (
+                  <section key={table.key} className="market-macro-subsection">
+                    <div className="market-macro-subsection-header">{table.key.replaceAll("_", " ")}</div>
+                    <div className="market-table-scroll">
+                      <table className="table market-table">
+                        <thead>
+                          <tr>
+                            {table.columns.map((column) => (
+                              <th key={`${table.key}-${column}`}>{column}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {table.rows.map((row, index) => (
+                            <tr key={`${table.key}-${index}`}>
+                              {table.columns.map((column) => (
+                                <td key={`${table.key}-${index}-${column}`}>{row[column] || "—"}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                ))}
               </div>
             ) : (
               <div style={{ color: "var(--muted)" }}>
